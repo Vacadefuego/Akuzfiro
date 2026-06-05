@@ -131,7 +131,47 @@ def guardar_hecho(hecho):
         print(f"Error guardando hecho: {e}")
 
 
-# --- BUSQUEDA WEB ---
+def extraer_hechos_automatico(mensaje_usuario, respuesta_akuzfiro):
+    """Analiza la conversación y extrae hechos importantes sobre Gustavo para guardar."""
+    try:
+        prompt_extractor = f"""Analiza este intercambio y extrae SOLO hechos concretos y permanentes sobre Gustavo que valga la pena recordar para siempre.
+
+Mensaje de Gustavo: {mensaje_usuario}
+Respuesta de Akuzfiro: {respuesta_akuzfiro}
+
+Reglas estrictas:
+- Solo extrae hechos NUEVOS y CONCRETOS (nombre, lugar, trabajo, estudios, preferencias, personas importantes, proyectos, datos personales)
+- NO extraigas preguntas, opiniones temporales, ni cosas que ya son obvias
+- Si no hay ningún hecho nuevo relevante, responde exactamente: NINGUNO
+- Si hay hechos, responde con una lista, un hecho por línea, sin numeración ni guiones
+- Máximo 3 hechos por conversación
+- Sé muy breve y concreto. Ejemplo: "Estudia en la Universidad Euro Hispanoamericana" o "Vive en Xalapa, Veracruz, México"
+
+Responde solo con los hechos o con NINGUNO:"""
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt_extractor}],
+            temperature=0.1,
+            max_tokens=150
+        )
+        resultado = response.choices[0].message.content.strip()
+
+        if resultado == "NINGUNO" or not resultado:
+            return
+
+        hechos_existentes = cargar_hechos()
+        for linea in resultado.split("\n"):
+            hecho = linea.strip()
+            if hecho and hecho != "NINGUNO" and len(hecho) > 5:
+                # Evitar duplicados aproximados
+                ya_existe = any(hecho.lower()[:30] in h.lower() for h in hechos_existentes)
+                if not ya_existe:
+                    guardar_hecho(hecho)
+
+    except Exception as e:
+        print(f"Error extrayendo hechos: {e}")
+
 def buscar_web(query, max_resultados=4):
     try:
         with DDGS() as ddgs:
@@ -205,6 +245,15 @@ def chat():
         )
         respuesta = response.choices[0].message.content
         guardar_conversacion(mensaje, respuesta)
+        # Extraer hechos cada 3 conversaciones para no saturar la API
+        try:
+            conn = get_conn()
+            count = conn.run("SELECT COUNT(*) FROM conversaciones")[0][0]
+            conn.close()
+            if count % 3 == 0:
+                extraer_hechos_automatico(mensaje, respuesta)
+        except Exception:
+            pass
         return jsonify({"respuesta": respuesta})
 
     except Exception as e:
