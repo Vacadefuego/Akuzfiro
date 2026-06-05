@@ -1,10 +1,10 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from groq import Groq
 from duckduckgo_search import DDGS
-import json
 import os
 import pg8000.native
+import httpx
 from datetime import datetime
 
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -13,6 +13,8 @@ CORS(app)
 # --- CONFIGURACION ---
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = "pNInz6obpgDQGcFmaJgB"  # Voz Adam — masculina, natural
 
 client = Groq(api_key=GROQ_API_KEY)
 
@@ -50,9 +52,7 @@ Ejemplo de cómo SÍ debes sonar:
 
 # --- BASE DE DATOS ---
 def get_conn():
-    # Parsear la URL de conexión
     url = DATABASE_URL
-    # formato: postgresql://user:password@host:port/dbname
     url = url.replace("postgresql://", "").replace("postgres://", "")
     user_pass, rest = url.split("@")
     user, password = user_pass.split(":")
@@ -100,7 +100,6 @@ def cargar_conversaciones(limit=10):
 
 def guardar_conversacion(usuario, akuzfiro):
     try:
-        # Truncar para no inflar el historial con respuestas enormes
         usuario_corto = usuario[:500] if len(usuario) > 500 else usuario
         akuzfiro_corto = akuzfiro[:800] if len(akuzfiro) > 800 else akuzfiro
         conn = get_conn()
@@ -131,16 +130,16 @@ def guardar_hecho(hecho):
         print(f"Error guardando hecho: {e}")
 
 
+# --- EXTRACCION DE HECHOS ---
 def extraer_hechos_automatico(mensaje_usuario, respuesta_akuzfiro):
-    """Analiza la conversación y extrae hechos importantes sobre Gustavo para guardar."""
     try:
         prompt_extractor = f"""Extrae hechos permanentes e importantes sobre Gustavo de este mensaje.
 
 Gustavo dijo: {mensaje_usuario[:300]}
 
-REGLAS — seguir exactamente:
+REGLAS:
 - Solo hechos personales concretos: nombre, edad, ciudad, estudios, trabajo, familia, gustos duraderos, proyectos, metas
-- NO guardes: idioma que habla, que hizo una pregunta, que usó slang, cosas temporales, cosas obvias
+- NO guardes: idioma, preguntas, slang, cosas temporales, cosas obvias
 - Si no hay hechos importantes, responde únicamente: NINGUNO
 - Responde solo con los hechos, uno por línea, sin numeración ni guiones
 - Máximo 2 hechos, muy breves. Ejemplo: "Tiene 22 años" / "Estudia arquitectura"
@@ -160,10 +159,10 @@ Hechos importantes:"""
             return
 
         hechos_existentes = cargar_hechos()
-        ignorar = ["ninguno", "no se menciona", "no hay", "la respuesta", 
+        ignorar = ["ninguno", "no se menciona", "no hay", "la respuesta",
                    "habla español", "habla ingles", "habla inglés",
                    "utilizó", "utilizo", "lenguaje", "pregunta", "comunic"]
-        
+
         for linea in resultado.split("\n"):
             hecho = linea.strip().lstrip("-•*123456789. ")
             if not hecho or len(hecho) < 6 or len(hecho) > 150:
@@ -177,6 +176,8 @@ Hechos importantes:"""
     except Exception as e:
         print(f"Error extrayendo hechos: {e}")
 
+
+# --- BUSQUEDA WEB ---
 def buscar_web(query, max_resultados=4):
     try:
         with DDGS() as ddgs:
@@ -201,20 +202,56 @@ def necesita_busqueda(mensaje):
     return any(p in mensaje.lower() for p in palabras)
 
 
+# --- VOZ (ElevenLabs) ---
+def texto_a_voz(texto):
+    """Convierte texto a audio MP3 usando ElevenLabs."""
+    try:
+        # Limpiar URLs y caracteres especiales para que suenen bien en voz
+        import re
+        texto_limpio = re.sub(r'https?://\S+', '', texto)
+        texto_limpio = re.sub(r'\*\*|__|\*|_|`', '', texto_limpio)
+        texto_limpio = texto_limpio.strip()[:1000]  # Máximo 1000 chars para el plan gratuito
+
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
+        headers = {
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "text": texto_limpio,
+            "model_id": "eleven_multilingual_v2",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75,
+                "style": 0.3,
+                "use_speaker_boost": True
+            }
+        }
+        with httpx.Client(timeout=30) as http:
+            r = http.post(url, json=payload, headers=headers)
+            if r.status_code == 200:
+                return r.content
+            else:
+                print(f"ElevenLabs error: {r.status_code} {r.text}")
+                return None
+    except Exception as e:
+        print(f"Error TTS: {e}")
+        return None
+
+
 # --- RUTAS ---
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.json
     mensaje = data.get("mensaje", "")
+    con_voz = data.get("voz", False)
 
     if not mensaje:
         return jsonify({"error": "Mensaje vacío"}), 400
 
-    # Fecha y hora actual
     ahora = datetime.now().strftime("%A %d de %B de %Y, %H:%M hrs")
-
     hechos = cargar_hechos()
-    conversaciones = cargar_conversaciones(15)
+    conversaciones = cargar_conversaciones(10)
 
     system_prompt = PERSONALIDAD
     system_prompt += f"\n\nFECHA Y HORA ACTUAL: {ahora} (hora del servidor)"
@@ -225,7 +262,7 @@ def chat():
             system_prompt += f"- {h}\n"
 
     if conversaciones:
-        system_prompt += "\n\nConversaciones recientes (resumen):\n"
+        system_prompt += "\n\nConversaciones recientes:\n"
         for conv in conversaciones:
             u = conv['usuario'][:200] if len(conv['usuario']) > 200 else conv['usuario']
             a = conv['akuzfiro'][:300] if len(conv['akuzfiro']) > 300 else conv['akuzfiro']
@@ -252,7 +289,8 @@ def chat():
         )
         respuesta = response.choices[0].message.content
         guardar_conversacion(mensaje, respuesta)
-        # Extraer hechos cada 3 conversaciones para no saturar la API
+
+        # Extraer hechos cada 3 conversaciones
         try:
             conn = get_conn()
             count = conn.run("SELECT COUNT(*) FROM conversaciones")[0][0]
@@ -261,7 +299,16 @@ def chat():
                 extraer_hechos_automatico(mensaje, respuesta)
         except Exception:
             pass
-        return jsonify({"respuesta": respuesta})
+
+        # Generar audio si se pidió voz
+        audio_b64 = None
+        if con_voz and ELEVENLABS_API_KEY:
+            audio_bytes = texto_a_voz(respuesta)
+            if audio_bytes:
+                import base64
+                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+        return jsonify({"respuesta": respuesta, "audio": audio_b64})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -284,7 +331,7 @@ def limpiar_hechos():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+@app.route("/hecho", methods=["POST"])
 def agregar_hecho():
     data = request.json
     hecho = data.get("hecho", "")

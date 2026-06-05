@@ -465,6 +465,9 @@
         <div class="status-dot"></div>
         En línea
       </div>
+      <button id="btnVoz" onclick="toggleVoz()" title="Activar/desactivar voz">
+        🔇
+      </button>
     </div>
   </header>
 
@@ -493,7 +496,25 @@
     const chatEl = document.getElementById('chat');
     const inputEl = document.getElementById('input');
     const btnEl = document.getElementById('btnEnviar');
+    const btnVozEl = document.getElementById('btnVoz');
     const bienvenida = document.getElementById('bienvenida');
+
+    let vozActiva = false;
+
+    function toggleVoz() {
+      vozActiva = !vozActiva;
+      btnVozEl.textContent = vozActiva ? '🔊' : '🔇';
+      btnVozEl.classList.toggle('activo', vozActiva);
+    }
+
+    function reproducirAudio(base64) {
+      try {
+        const audio = new Audio('data:audio/mpeg;base64,' + base64);
+        audio.play();
+      } catch(e) {
+        console.error('Error reproduciendo audio:', e);
+      }
+    }
 
     inputEl.addEventListener('input', function() {
       this.style.height = 'auto';
@@ -541,11 +562,9 @@
       const wrapper = document.createElement('div');
       wrapper.className = 'typing-wrapper';
       wrapper.id = 'typing';
-
       const typing = document.createElement('div');
       typing.className = 'typing';
       typing.innerHTML = '<span></span><span></span><span></span>';
-
       wrapper.appendChild(typing);
       chatEl.appendChild(wrapper);
       chatEl.scrollTop = chatEl.scrollHeight;
@@ -570,7 +589,7 @@
         const res = await fetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mensaje })
+          body: JSON.stringify({ mensaje, voz: vozActiva })
         });
 
         const data = await res.json();
@@ -578,12 +597,15 @@
 
         if (data.respuesta) {
           agregarMensaje(data.respuesta, 'akuzfiro');
+          if (vozActiva && data.audio) {
+            reproducirAudio(data.audio);
+          }
         } else {
           agregarMensaje('Error: ' + (data.error || 'desconocido'), 'akuzfiro');
         }
       } catch (err) {
         quitarTyping();
-        agregarMensaje('No puedo conectarme al servidor. ¿Está corriendo app.py?', 'akuzfiro');
+        agregarMensaje('No puedo conectarme al servidor.', 'akuzfiro');
       }
 
       btnEl.disabled = false;
