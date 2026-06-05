@@ -505,16 +505,36 @@
       vozActiva = !vozActiva;
       btnVozEl.textContent = vozActiva ? '🔊' : '🔇';
       btnVozEl.classList.toggle('activo', vozActiva);
+      if (!vozActiva) window.speechSynthesis.cancel();
     }
 
-    function reproducirAudio(base64) {
-      try {
-        const audio = new Audio('data:audio/mpeg;base64,' + base64);
-        audio.play();
-      } catch(e) {
-        console.error('Error reproduciendo audio:', e);
-      }
+    function hablar(texto) {
+      if (!vozActiva) return;
+      window.speechSynthesis.cancel();
+      // Limpiar URLs y markdown para que suene natural
+      let textoLimpio = texto
+        .replace(/https?:\/\/\S+/g, '')
+        .replace(/\*\*|__|\*|_|`/g, '')
+        .replace(/\n+/g, ' ')
+        .trim();
+      if (!textoLimpio) return;
+
+      const utter = new SpeechSynthesisUtterance(textoLimpio);
+      utter.lang = 'es-MX';
+      utter.rate = 1.0;
+      utter.pitch = 1.0;
+      utter.volume = 1.0;
+
+      // Buscar una voz en español
+      const voces = window.speechSynthesis.getVoices();
+      const vozEsp = voces.find(v => v.lang.startsWith('es')) || voces[0];
+      if (vozEsp) utter.voice = vozEsp;
+
+      window.speechSynthesis.speak(utter);
     }
+
+    // Cargar voces (necesario en algunos navegadores)
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 
     inputEl.addEventListener('input', function() {
       this.style.height = 'auto';
@@ -589,7 +609,7 @@
         const res = await fetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mensaje, voz: vozActiva })
+          body: JSON.stringify({ mensaje })
         });
 
         const data = await res.json();
@@ -597,9 +617,7 @@
 
         if (data.respuesta) {
           agregarMensaje(data.respuesta, 'akuzfiro');
-          if (vozActiva && data.audio) {
-            reproducirAudio(data.audio);
-          }
+          if (vozActiva) hablar(data.respuesta);
         } else {
           agregarMensaje('Error: ' + (data.error || 'desconocido'), 'akuzfiro');
         }
