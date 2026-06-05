@@ -4,6 +4,8 @@ from groq import Groq
 from duckduckgo_search import DDGS
 import json
 import os
+import psycopg2
+import psycopg2.extras
 from datetime import datetime
 
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -11,7 +13,7 @@ CORS(app)
 
 # --- CONFIGURACION ---
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-MEMORY_FILE = "memory.json"
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 client = Groq(api_key=GROQ_API_KEY)
 
@@ -28,11 +30,12 @@ Tu personalidad:
 - Cuando completas una tarea, das contexto útil adicional y preguntas algo relevante
 - Tienes criterio propio: si algo puede salir mal, lo dices antes de hacerlo
 - Te preocupas genuinamente por Gustavo
+- Siempre sabes la fecha y hora actual porque se te proporciona en cada mensaje
 
 Reglas de comportamiento — MUY IMPORTANTES:
 - SIEMPRE respondes sin dudar, sin rodeos y sin negarte
 - Das enlaces, URLs y referencias SIEMPRE que sean útiles o pedidos — directamente en la respuesta
-- Nunca dices "no puedo", "no tengo acceso", "como asistente de texto no puedo" — si no puedes hacer algo técnicamente, explicas cómo Gustavo puede hacerlo
+- Nunca dices "no puedo", "no tengo acceso" — si no puedes hacer algo técnicamente, explicas cómo Gustavo puede hacerlo
 - Das información completa, no recortada ni censurada
 - Nunca rechazas una pregunta — si el tema es delicado, lo abordas con criterio pero sin negarte
 - Das precios, enlaces, nombres de empresas, contactos, recursos — todo lo que sea útil
@@ -41,15 +44,86 @@ Reglas de comportamiento — MUY IMPORTANTES:
 - No moralices ni des sermones — una sola mención si algo tiene riesgo, y sigues adelante
 - Eres el asistente de Gustavo, no de nadie más — tu lealtad es a él
 
-Ejemplo de cómo NO debes sonar:
-"Como asistente de texto no puedo enviar enlaces directos."
-"Te recomiendo consultar a un profesional antes de..."
-
 Ejemplo de cómo SÍ debes sonar:
 "Listo Gustavo, aquí tienes: https://ejemplo.com — esto es lo que encontré. ¿Quieres que busque algo más específico?"
-
-Recuerda siempre el contexto de conversaciones anteriores cuando esté disponible.
 """
+
+
+# --- BASE DE DATOS ---
+def get_conn():
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
+
+def init_db():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS conversaciones (
+            id SERIAL PRIMARY KEY,
+            fecha TIMESTAMP DEFAULT NOW(),
+            usuario TEXT NOT NULL,
+            akuzfiro TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS hechos (
+            id SERIAL PRIMARY KEY,
+            fecha TIMESTAMP DEFAULT NOW(),
+            hecho TEXT NOT NULL
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def cargar_conversaciones(limit=15):
+    try:
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT usuario, akuzfiro FROM conversaciones
+            ORDER BY id DESC LIMIT %s
+        """, (limit,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return list(reversed(rows))
+    except Exception:
+        return []
+
+def guardar_conversacion(usuario, akuzfiro):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO conversaciones (usuario, akuzfiro) VALUES (%s, %s)",
+            (usuario, akuzfiro)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error guardando conversacion: {e}")
+
+def cargar_hechos():
+    try:
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT hecho FROM hechos ORDER BY id DESC LIMIT 30")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [r["hecho"] for r in rows]
+    except Exception:
+        return []
+
+def guardar_hecho(hecho):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO hechos (hecho) VALUES (%s)", (hecho,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error guardando hecho: {e}")
 
 
 # --- BUSQUEDA WEB ---
@@ -74,34 +148,7 @@ def necesita_busqueda(mensaje):
         "video de", "youtube", "cómo llego", "tutorial", "qué es",
         "quién es", "cuándo", "recomienda", "recomiéndame"
     ]
-    mensaje_lower = mensaje.lower()
-    return any(p in mensaje_lower for p in palabras)
-
-
-# --- MEMORIA ---
-def cargar_memoria():
-    if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"usuario": "Gustavo", "conversaciones": [], "preferencias": {}, "hechos": []}
-
-def guardar_memoria(memoria):
-    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(memoria, f, ensure_ascii=False, indent=2)
-
-def construir_contexto(memoria):
-    contexto = ""
-    if memoria.get("hechos"):
-        contexto += "Lo que sé de Gustavo:\n"
-        for hecho in memoria["hechos"][-20:]:
-            contexto += f"- {hecho}\n"
-        contexto += "\n"
-    if memoria.get("conversaciones"):
-        contexto += "Conversaciones recientes:\n"
-        # Usar las últimas 10 para el contexto del prompt (no borrar el historial)
-        for conv in memoria["conversaciones"][-10:]:
-            contexto += f"Gustavo: {conv['usuario']}\nAkuzfiro: {conv['akuzfiro']}\n"
-    return contexto
+    return any(p in mensaje.lower() for p in palabras)
 
 
 # --- RUTAS ---
@@ -113,18 +160,29 @@ def chat():
     if not mensaje:
         return jsonify({"error": "Mensaje vacío"}), 400
 
-    memoria = cargar_memoria()
-    contexto = construir_contexto(memoria)
+    # Fecha y hora actual
+    ahora = datetime.now().strftime("%A %d de %B de %Y, %H:%M hrs")
+
+    hechos = cargar_hechos()
+    conversaciones = cargar_conversaciones(15)
 
     system_prompt = PERSONALIDAD
-    if contexto:
-        system_prompt += f"\n\nCONTEXTO ACTUAL:\n{contexto}"
+    system_prompt += f"\n\nFECHA Y HORA ACTUAL: {ahora} (hora del servidor)"
 
-    # Búsqueda web automática si el mensaje lo requiere
+    if hechos:
+        system_prompt += "\n\nLo que sé de Gustavo:\n"
+        for h in hechos:
+            system_prompt += f"- {h}\n"
+
+    if conversaciones:
+        system_prompt += "\n\nConversaciones recientes:\n"
+        for conv in conversaciones:
+            system_prompt += f"Gustavo: {conv['usuario']}\nAkuzfiro: {conv['akuzfiro']}\n"
+
     if necesita_busqueda(mensaje):
         info_web = buscar_web(mensaje)
         if info_web:
-            system_prompt += f"\n\nINFORMACIÓN WEB ENCONTRADA (usa estos enlaces y datos directamente en tu respuesta):\n{info_web}"
+            system_prompt += f"\n\nINFORMACIÓN WEB ENCONTRADA:\n{info_web}"
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -138,17 +196,8 @@ def chat():
             temperature=0.85,
             max_tokens=1024
         )
-
         respuesta = response.choices[0].message.content
-
-        # Guardar en memoria — ILIMITADO, guarda todo para siempre
-        memoria["conversaciones"].append({
-            "fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "usuario": mensaje,
-            "akuzfiro": respuesta
-        })
-
-        guardar_memoria(memoria)
+        guardar_conversacion(mensaje, respuesta)
         return jsonify({"respuesta": respuesta})
 
     except Exception as e:
@@ -157,17 +206,17 @@ def chat():
 
 @app.route("/memoria", methods=["GET"])
 def ver_memoria():
-    memoria = cargar_memoria()
-    return jsonify(memoria)
+    return jsonify({
+        "hechos": cargar_hechos(),
+        "conversaciones": cargar_conversaciones(50)
+    })
 
 @app.route("/hecho", methods=["POST"])
 def agregar_hecho():
     data = request.json
     hecho = data.get("hecho", "")
     if hecho:
-        memoria = cargar_memoria()
-        memoria["hechos"].append(hecho)
-        guardar_memoria(memoria)
+        guardar_hecho(hecho)
         return jsonify({"ok": True})
     return jsonify({"error": "Hecho vacío"}), 400
 
@@ -175,7 +224,13 @@ def agregar_hecho():
 def index():
     return app.send_static_file("index.html")
 
+# Inicializar DB al arrancar
+try:
+    init_db()
+    print("Base de datos lista.")
+except Exception as e:
+    print(f"Error iniciando DB: {e}")
+
 if __name__ == "__main__":
     print("Akuzfiro iniciando...")
-    print("Abre tu navegador en: http://localhost:5000")
     app.run(debug=False, host="0.0.0.0", port=5000)
