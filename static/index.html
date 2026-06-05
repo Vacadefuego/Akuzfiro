@@ -449,6 +449,32 @@
     .mensaje-text {
       white-space: pre-wrap;
     }
+
+    #btnMic {
+      width: 40px;
+      height: 40px;
+      background: rgba(0, 212, 255, 0.08);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 10px;
+      color: white;
+      cursor: pointer;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    #btnMic:hover { background: rgba(0, 212, 255, 0.15); }
+    #btnMic.escuchando {
+      background: rgba(255, 50, 50, 0.2);
+      border-color: rgba(255, 50, 50, 0.5);
+      animation: pulseMic 1s infinite;
+    }
+    @keyframes pulseMic {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255, 50, 50, 0.3); }
+      50% { box-shadow: 0 0 0 8px rgba(255, 50, 50, 0); }
+    }
   </style>
 </head>
 <body>
@@ -481,7 +507,10 @@
 
   <div id="inputArea">
     <div class="input-container">
-      <textarea id="input" placeholder="Escribe algo a Akuzfiro..." rows="1"></textarea>
+      <textarea id="input" placeholder="Escribe o habla con Akuzfiro..." rows="1"></textarea>
+      <button id="btnMic" onclick="toggleMic()" title="Hablar">
+        🎤
+      </button>
       <button id="btnEnviar" onclick="enviar()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -531,6 +560,66 @@
       if (vozEsp) utter.voice = vozEsp;
 
       window.speechSynthesis.speak(utter);
+    }
+
+    // --- MICROFONO ---
+    let reconocimiento = null;
+    let micActivo = false;
+    const btnMicEl = document.getElementById('btnMic');
+
+    function toggleMic() {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome.');
+        return;
+      }
+      if (micActivo) {
+        detenerMic();
+      } else {
+        iniciarMic();
+      }
+    }
+
+    function iniciarMic() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      reconocimiento = new SR();
+      reconocimiento.lang = 'es-MX';
+      reconocimiento.interimResults = false;
+      reconocimiento.maxAlternatives = 1;
+
+      reconocimiento.onstart = () => {
+        micActivo = true;
+        btnMicEl.textContent = '⏹️';
+        btnMicEl.classList.add('escuchando');
+        window.speechSynthesis.cancel(); // Para la voz si está hablando
+      };
+
+      reconocimiento.onresult = (e) => {
+        const texto = e.results[0][0].transcript;
+        inputEl.value = texto;
+        detenerMic();
+        enviar();
+      };
+
+      reconocimiento.onerror = (e) => {
+        console.error('Error micrófono:', e.error);
+        detenerMic();
+      };
+
+      reconocimiento.onend = () => {
+        detenerMic();
+      };
+
+      reconocimiento.start();
+    }
+
+    function detenerMic() {
+      micActivo = false;
+      btnMicEl.textContent = '🎤';
+      btnMicEl.classList.remove('escuchando');
+      if (reconocimiento) {
+        try { reconocimiento.stop(); } catch(e) {}
+        reconocimiento = null;
+      }
     }
 
     // Cargar voces (necesario en algunos navegadores)
