@@ -134,38 +134,42 @@ def guardar_hecho(hecho):
 def extraer_hechos_automatico(mensaje_usuario, respuesta_akuzfiro):
     """Analiza la conversación y extrae hechos importantes sobre Gustavo para guardar."""
     try:
-        prompt_extractor = f"""Analiza este intercambio y extrae SOLO hechos concretos y permanentes sobre Gustavo que valga la pena recordar para siempre.
+        prompt_extractor = f"""Extrae hechos concretos y permanentes sobre Gustavo de este intercambio.
 
-Mensaje de Gustavo: {mensaje_usuario}
-Respuesta de Akuzfiro: {respuesta_akuzfiro}
+Gustavo dijo: {mensaje_usuario[:300]}
 
-Reglas estrictas:
-- Solo extrae hechos NUEVOS y CONCRETOS (nombre, lugar, trabajo, estudios, preferencias, personas importantes, proyectos, datos personales)
-- NO extraigas preguntas, opiniones temporales, ni cosas que ya son obvias
-- Si no hay ningún hecho nuevo relevante, responde exactamente: NINGUNO
-- Si hay hechos, responde con una lista, un hecho por línea, sin numeración ni guiones
-- Máximo 3 hechos por conversación
-- Sé muy breve y concreto. Ejemplo: "Estudia en la Universidad Euro Hispanoamericana" o "Vive en Xalapa, Veracruz, México"
+REGLAS — seguir exactamente:
+- Responde SOLO con hechos concretos, uno por línea
+- Cada hecho debe ser una frase corta y directa. Ejemplo: "Tiene 22 años" o "Le gustan los animales"
+- Si no hay hechos nuevos concretos, responde únicamente con la palabra: NINGUNO
+- NO incluyas explicaciones, comentarios, ni metahechos
+- NO incluyas frases sobre lo que dijiste o dejaste de decir
+- Máximo 2 hechos
 
-Responde solo con los hechos o con NINGUNO:"""
+Hechos:"""
 
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt_extractor}],
-            temperature=0.1,
-            max_tokens=150
+            temperature=0.0,
+            max_tokens=80
         )
         resultado = response.choices[0].message.content.strip()
+        print(f"Hechos extraídos: {resultado}")
 
-        if resultado == "NINGUNO" or not resultado:
+        if not resultado or resultado.upper() == "NINGUNO":
             return
 
         hechos_existentes = cargar_hechos()
         for linea in resultado.split("\n"):
-            hecho = linea.strip()
-            if hecho and hecho != "NINGUNO" and len(hecho) > 5:
-                # Evitar duplicados aproximados
-                ya_existe = any(hecho.lower()[:30] in h.lower() for h in hechos_existentes)
+            hecho = linea.strip().lstrip("-•*123456789. ")
+            if (hecho and
+                len(hecho) > 5 and
+                len(hecho) < 200 and
+                "NINGUNO" not in hecho.upper() and
+                "no se menciona" not in hecho.lower() and
+                "no hay" not in hecho.lower()):
+                ya_existe = any(hecho.lower()[:25] in h.lower() for h in hechos_existentes)
                 if not ya_existe:
                     guardar_hecho(hecho)
 
