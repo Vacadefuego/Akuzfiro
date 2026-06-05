@@ -134,19 +134,18 @@ def guardar_hecho(hecho):
 def extraer_hechos_automatico(mensaje_usuario, respuesta_akuzfiro):
     """Analiza la conversación y extrae hechos importantes sobre Gustavo para guardar."""
     try:
-        prompt_extractor = f"""Extrae hechos concretos y permanentes sobre Gustavo de este intercambio.
+        prompt_extractor = f"""Extrae hechos permanentes e importantes sobre Gustavo de este mensaje.
 
 Gustavo dijo: {mensaje_usuario[:300]}
 
 REGLAS — seguir exactamente:
-- Responde SOLO con hechos concretos, uno por línea
-- Cada hecho debe ser una frase corta y directa. Ejemplo: "Tiene 22 años" o "Le gustan los animales"
-- Si no hay hechos nuevos concretos, responde únicamente con la palabra: NINGUNO
-- NO incluyas explicaciones, comentarios, ni metahechos
-- NO incluyas frases sobre lo que dijiste o dejaste de decir
-- Máximo 2 hechos
+- Solo hechos personales concretos: nombre, edad, ciudad, estudios, trabajo, familia, gustos duraderos, proyectos, metas
+- NO guardes: idioma que habla, que hizo una pregunta, que usó slang, cosas temporales, cosas obvias
+- Si no hay hechos importantes, responde únicamente: NINGUNO
+- Responde solo con los hechos, uno por línea, sin numeración ni guiones
+- Máximo 2 hechos, muy breves. Ejemplo: "Tiene 22 años" / "Estudia arquitectura"
 
-Hechos:"""
+Hechos importantes:"""
 
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -157,21 +156,23 @@ Hechos:"""
         resultado = response.choices[0].message.content.strip()
         print(f"Hechos extraídos: {resultado}")
 
-        if not resultado or resultado.upper() == "NINGUNO":
+        if not resultado or resultado.upper().startswith("NINGUNO"):
             return
 
         hechos_existentes = cargar_hechos()
+        ignorar = ["ninguno", "no se menciona", "no hay", "la respuesta", 
+                   "habla español", "habla ingles", "habla inglés",
+                   "utilizó", "utilizo", "lenguaje", "pregunta", "comunic"]
+        
         for linea in resultado.split("\n"):
             hecho = linea.strip().lstrip("-•*123456789. ")
-            if (hecho and
-                len(hecho) > 5 and
-                len(hecho) < 200 and
-                "NINGUNO" not in hecho.upper() and
-                "no se menciona" not in hecho.lower() and
-                "no hay" not in hecho.lower()):
-                ya_existe = any(hecho.lower()[:25] in h.lower() for h in hechos_existentes)
-                if not ya_existe:
-                    guardar_hecho(hecho)
+            if not hecho or len(hecho) < 6 or len(hecho) > 150:
+                continue
+            if any(p in hecho.lower() for p in ignorar):
+                continue
+            ya_existe = any(hecho.lower()[:25] in h.lower() for h in hechos_existentes)
+            if not ya_existe:
+                guardar_hecho(hecho)
 
     except Exception as e:
         print(f"Error extrayendo hechos: {e}")
@@ -245,7 +246,9 @@ def chat():
             model="llama-3.3-70b-versatile",
             messages=messages,
             temperature=0.85,
-            max_tokens=800
+            max_tokens=800,
+            frequency_penalty=0.3,
+            presence_penalty=0.1
         )
         respuesta = response.choices[0].message.content
         guardar_conversacion(mensaje, respuesta)
