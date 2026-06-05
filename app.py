@@ -4,8 +4,7 @@ from groq import Groq
 from duckduckgo_search import DDGS
 import json
 import os
-import psycopg2
-import psycopg2.extras
+import pg8000.native
 from datetime import datetime
 
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -51,53 +50,61 @@ Ejemplo de cómo SÍ debes sonar:
 
 # --- BASE DE DATOS ---
 def get_conn():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    # Parsear la URL de conexión
+    url = DATABASE_URL
+    # formato: postgresql://user:password@host:port/dbname
+    url = url.replace("postgresql://", "").replace("postgres://", "")
+    user_pass, rest = url.split("@")
+    user, password = user_pass.split(":")
+    host_port, dbname = rest.split("/")
+    if ":" in host_port:
+        host, port = host_port.split(":")
+        port = int(port)
+    else:
+        host = host_port
+        port = 5432
+    return pg8000.native.Connection(user, password=password, host=host, port=port, database=dbname, ssl_context=True)
 
 def init_db():
     conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
+    conn.run("""
         CREATE TABLE IF NOT EXISTS conversaciones (
             id SERIAL PRIMARY KEY,
             fecha TIMESTAMP DEFAULT NOW(),
             usuario TEXT NOT NULL,
             akuzfiro TEXT NOT NULL
-        );
+        )
+    """)
+    conn.run("""
         CREATE TABLE IF NOT EXISTS hechos (
             id SERIAL PRIMARY KEY,
             fecha TIMESTAMP DEFAULT NOW(),
             hecho TEXT NOT NULL
-        );
+        )
     """)
-    conn.commit()
-    cur.close()
     conn.close()
 
 def cargar_conversaciones(limit=15):
     try:
         conn = get_conn()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("""
-            SELECT usuario, akuzfiro FROM conversaciones
-            ORDER BY id DESC LIMIT %s
-        """, (limit,))
-        rows = cur.fetchall()
-        cur.close()
+        rows = conn.run(
+            "SELECT usuario, akuzfiro FROM conversaciones ORDER BY id DESC LIMIT :limit",
+            limit=limit
+        )
         conn.close()
-        return list(reversed(rows))
-    except Exception:
+        result = [{"usuario": r[0], "akuzfiro": r[1]} for r in rows]
+        return list(reversed(result))
+    except Exception as e:
+        print(f"Error cargando conversaciones: {e}")
         return []
 
 def guardar_conversacion(usuario, akuzfiro):
     try:
         conn = get_conn()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO conversaciones (usuario, akuzfiro) VALUES (%s, %s)",
-            (usuario, akuzfiro)
+        conn.run(
+            "INSERT INTO conversaciones (usuario, akuzfiro) VALUES (:u, :a)",
+            u=usuario, a=akuzfiro
         )
-        conn.commit()
-        cur.close()
         conn.close()
     except Exception as e:
         print(f"Error guardando conversacion: {e}")
@@ -105,22 +112,17 @@ def guardar_conversacion(usuario, akuzfiro):
 def cargar_hechos():
     try:
         conn = get_conn()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT hecho FROM hechos ORDER BY id DESC LIMIT 30")
-        rows = cur.fetchall()
-        cur.close()
+        rows = conn.run("SELECT hecho FROM hechos ORDER BY id DESC LIMIT 30")
         conn.close()
-        return [r["hecho"] for r in rows]
-    except Exception:
+        return [r[0] for r in rows]
+    except Exception as e:
+        print(f"Error cargando hechos: {e}")
         return []
 
 def guardar_hecho(hecho):
     try:
         conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("INSERT INTO hechos (hecho) VALUES (%s)", (hecho,))
-        conn.commit()
-        cur.close()
+        conn.run("INSERT INTO hechos (hecho) VALUES (:h)", h=hecho)
         conn.close()
     except Exception as e:
         print(f"Error guardando hecho: {e}")
