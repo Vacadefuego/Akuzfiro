@@ -84,7 +84,7 @@ def init_db():
     """)
     conn.close()
 
-def cargar_conversaciones(limit=15):
+def cargar_conversaciones(limit=10):
     try:
         conn = get_conn()
         rows = conn.run(
@@ -100,10 +100,13 @@ def cargar_conversaciones(limit=15):
 
 def guardar_conversacion(usuario, akuzfiro):
     try:
+        # Truncar para no inflar el historial con respuestas enormes
+        usuario_corto = usuario[:500] if len(usuario) > 500 else usuario
+        akuzfiro_corto = akuzfiro[:800] if len(akuzfiro) > 800 else akuzfiro
         conn = get_conn()
         conn.run(
             "INSERT INTO conversaciones (usuario, akuzfiro) VALUES (:u, :a)",
-            u=usuario, a=akuzfiro
+            u=usuario_corto, a=akuzfiro_corto
         )
         conn.close()
     except Exception as e:
@@ -177,9 +180,11 @@ def chat():
             system_prompt += f"- {h}\n"
 
     if conversaciones:
-        system_prompt += "\n\nConversaciones recientes:\n"
+        system_prompt += "\n\nConversaciones recientes (resumen):\n"
         for conv in conversaciones:
-            system_prompt += f"Gustavo: {conv['usuario']}\nAkuzfiro: {conv['akuzfiro']}\n"
+            u = conv['usuario'][:200] if len(conv['usuario']) > 200 else conv['usuario']
+            a = conv['akuzfiro'][:300] if len(conv['akuzfiro']) > 300 else conv['akuzfiro']
+            system_prompt += f"Gustavo: {u}\nAkuzfiro: {a}\n"
 
     if necesita_busqueda(mensaje):
         info_web = buscar_web(mensaje)
@@ -196,7 +201,7 @@ def chat():
             model="llama-3.3-70b-versatile",
             messages=messages,
             temperature=0.85,
-            max_tokens=1024
+            max_tokens=800
         )
         respuesta = response.choices[0].message.content
         guardar_conversacion(mensaje, respuesta)
