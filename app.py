@@ -271,7 +271,17 @@ def ver_memoria():
         "conversaciones": cargar_conversaciones(50)
     })
 
-@app.route("/hecho", methods=["POST"])
+@app.route("/limpiar-hechos", methods=["POST"])
+def limpiar_hechos():
+    try:
+        conn = get_conn()
+        conn.run("DELETE FROM hechos WHERE hecho LIKE '%NINGUNO%' OR hecho LIKE '%no se menciona%' OR hecho LIKE '%no hay%' OR hecho LIKE '%la respuesta%' OR LENGTH(hecho) < 6")
+        conn.close()
+        return jsonify({"ok": True, "mensaje": "Hechos basura eliminados"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 def agregar_hecho():
     data = request.json
     hecho = data.get("hecho", "")
