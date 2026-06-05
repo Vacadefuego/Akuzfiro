@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Akuzfiro</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Inter:wght@300;400;500&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #050508;
+      --surface: #0c0c14;
+      --surface2: #12121f;
+      --border: #1a1a2e;
+      --accent: #00d4ff;
+      --accent2: #7000ff;
+      --accent3: #00ff9d;
+      --text: #d0d0e8;
+      --text-dim: #4a4a6a;
+      --link: #00d4ff;
+      --user-bg: #0d0d1f;
+      --ai-bg: #080f0c;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Fondo animado */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background:
+        radial-gradient(ellipse at 20% 20%, rgba(0, 112, 255, 0.04) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(0, 212, 255, 0.03) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(112, 0, 255, 0.02) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* HEADER */
+    header {
+      position: relative;
+      z-index: 10;
+      padding: 0 28px;
+      height: 60px;
+      background: rgba(8, 8, 16, 0.95);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      backdrop-filter: blur(20px);
+    }
+
+    header::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent);
+      opacity: 0.4;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .logo-icon::before {
+      content: '';
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      border: 1.5px solid var(--accent);
+      border-radius: 8px;
+      transform: rotate(45deg);
+      animation: rotateSlow 8s linear infinite;
+      opacity: 0.6;
+    }
+
+    .logo-icon::after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border: 1.5px solid var(--accent2);
+      border-radius: 4px;
+      transform: rotate(45deg);
+      animation: rotateSlow 8s linear infinite reverse;
+      opacity: 0.8;
+    }
+
+    @keyframes rotateSlow {
+      from { transform: rotate(45deg); }
+      to { transform: rotate(405deg); }
+    }
+
+    .logo-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--accent);
+      position: relative;
+      z-index: 1;
+      animation: glow 2s ease-in-out infinite;
+    }
+
+    @keyframes glow {
+      0%, 100% { box-shadow: 0 0 6px var(--accent); }
+      50% { box-shadow: 0 0 16px var(--accent), 0 0 30px var(--accent); }
+    }
+
+    .logo-text {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: 4px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: rgba(0, 255, 157, 0.05);
+      border: 1px solid rgba(0, 255, 157, 0.15);
+      border-radius: 20px;
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--accent3);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent3);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--accent3);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+    }
+
+    /* CHAT */
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    #chat::-webkit-scrollbar { width: 3px; }
+    #chat::-webkit-scrollbar-track { background: transparent; }
+    #chat::-webkit-scrollbar-thumb {
+      background: linear-gradient(var(--accent), var(--accent2));
+      border-radius: 3px;
+    }
+
+    /* BIENVENIDA */
+    .bienvenida {
+      margin: auto;
+      text-align: center;
+      padding: 40px;
+    }
+
+    .bienvenida-title {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 3rem;
+      font-weight: 700;
+      letter-spacing: 8px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2), var(--accent3));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 12px;
+    }
+
+    .bienvenida-sub {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+
+    .bienvenida-line {
+      width: 80px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      margin: 16px auto;
+    }
+
+    /* MENSAJES */
+    .mensaje-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .mensaje-wrapper.usuario { align-items: flex-end; }
+    .mensaje-wrapper.akuzfiro { align-items: flex-start; }
+
+    .mensaje-label {
+      font-size: 0.65rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      font-weight: 600;
+      padding: 0 4px;
+    }
+
+    .mensaje-wrapper.usuario .mensaje-label { color: rgba(0, 212, 255, 0.5); }
+    .mensaje-wrapper.akuzfiro .mensaje-label { color: rgba(0, 212, 255, 0.5); }
+
+    .mensaje {
+      max-width: 72%;
+      padding: 14px 18px;
+      font-size: 0.92rem;
+      line-height: 1.7;
+      position: relative;
+      word-break: break-word;
+    }
+
+    .mensaje.usuario {
+      background: var(--user-bg);
+      border: 1px solid rgba(0, 212, 255, 0.15);
+      border-radius: 16px 4px 16px 16px;
+      color: #e8e8ff;
+    }
+
+    .mensaje.usuario::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 40%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.4));
+    }
+
+    .mensaje.akuzfiro {
+      background: linear-gradient(135deg, rgba(0, 20, 14, 0.95), rgba(0, 10, 20, 0.95));
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-left: 2px solid var(--accent);
+      border-radius: 4px 16px 16px 16px;
+      color: #e8f4ff;
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.04), inset 0 0 30px rgba(0, 255, 157, 0.02);
+    }
+
+    .mensaje.akuzfiro::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 50%;
+      height: 1px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+      opacity: 0.6;
+    }
+
+    /* ENLACES */
+    .mensaje a,
+    .mensaje-text a {
+      color: #00d4ff !important;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(0, 212, 255, 0.3);
+      transition: all 0.2s;
+      word-break: break-all;
+    }
+
+    .mensaje a:hover,
+    .mensaje-text a:hover {
+      color: #7000ff !important;
+      border-bottom-color: rgba(112, 0, 255, 0.5);
+      text-shadow: 0 0 8px rgba(112, 0, 255, 0.4);
+    }
+
+    /* TYPING */
+    .typing-wrapper {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      animation: slideIn 0.3s ease;
+    }
+
+    .typing {
+      padding: 14px 20px;
+      background: var(--ai-bg);
+      border: 1px solid rgba(0, 255, 157, 0.12);
+      border-radius: 4px 16px 16px 16px;
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .typing span {
+      width: 6px;
+      height: 6px;
+      background: var(--accent3);
+      border-radius: 50%;
+      animation: typingBounce 1.4s infinite;
+      box-shadow: 0 0 4px var(--accent3);
+    }
+
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes typingBounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-8px); opacity: 1; }
+    }
+
+    /* INPUT AREA */
+    #inputArea {
+      position: relative;
+      z-index: 10;
+      padding: 16px 24px 20px;
+      background: rgba(8, 8, 16, 0.95);
+      border-top: 1px solid var(--border);
+      backdrop-filter: blur(20px);
+    }
+
+    #inputArea::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent2), var(--accent), transparent);
+      opacity: 0.3;
+    }
+
+    .input-container {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 8px 8px 8px 18px;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    .input-container:focus-within {
+      border-color: rgba(0, 212, 255, 0.3);
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.05), 0 0 40px rgba(112, 0, 255, 0.03);
+    }
+
+    #input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 0.92rem;
+      outline: none;
+      resize: none;
+      min-height: 36px;
+      max-height: 120px;
+      font-family: 'Inter', sans-serif;
+      line-height: 1.6;
+      padding: 6px 0;
+    }
+
+    #input::placeholder { color: var(--text-dim); }
+
+    #btnEnviar {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      border: none;
+      border-radius: 10px;
+      color: white;
+      cursor: pointer;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    #btnEnviar:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 16px rgba(0, 212, 255, 0.3);
+    }
+
+    #btnEnviar:active { transform: scale(0.96); }
+    #btnEnviar:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+    .input-hint {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      text-align: center;
+      margin-top: 8px;
+      letter-spacing: 1px;
+    }
+
+    /* Convertir URLs en texto a links clicables */
+    .mensaje-text {
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo-container">
+      <div class="logo-icon">
+        <div class="logo-dot"></div>
+      </div>
+      <span class="logo-text">AKUZFIRO</span>
+    </div>
+    <div class="header-right">
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        En línea
+      </div>
+    </div>
+  </header>
+
+  <div id="chat">
+    <div class="bienvenida" id="bienvenida">
+      <div class="bienvenida-title">AKUZFIRO</div>
+      <div class="bienvenida-line"></div>
+      <div class="bienvenida-sub">Asistente personal · Gustavo</div>
+    </div>
+  </div>
+
+  <div id="inputArea">
+    <div class="input-container">
+      <textarea id="input" placeholder="Escribe algo a Akuzfiro..." rows="1"></textarea>
+      <button id="btnEnviar" onclick="enviar()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </div>
+    <div class="input-hint">Enter para enviar &nbsp;·&nbsp; Shift+Enter para nueva línea</div>
+  </div>
+
+  <script>
+    const chatEl = document.getElementById('chat');
+    const inputEl = document.getElementById('input');
+    const btnEl = document.getElementById('btnEnviar');
+    const bienvenida = document.getElementById('bienvenida');
+
+    inputEl.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
+
+    inputEl.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        enviar();
+      }
+    });
+
+    function linkifyText(text) {
+      const urlRegex = /(https?:\/\/[^\s\)\]\,\"\']+)/g;
+      const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return escaped.replace(urlRegex, url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
+    }
+
+    function agregarMensaje(texto, tipo) {
+      if (bienvenida) bienvenida.style.display = 'none';
+
+      const wrapper = document.createElement('div');
+      wrapper.className = `mensaje-wrapper ${tipo}`;
+
+      const label = document.createElement('div');
+      label.className = 'mensaje-label';
+      label.textContent = tipo === 'usuario' ? 'TÚ' : 'AKUZFIRO';
+
+      const burbuja = document.createElement('div');
+      burbuja.className = `mensaje ${tipo}`;
+
+      const contenido = document.createElement('div');
+      contenido.className = 'mensaje-text';
+      contenido.innerHTML = linkifyText(texto);
+
+      burbuja.appendChild(contenido);
+      wrapper.appendChild(label);
+      wrapper.appendChild(burbuja);
+      chatEl.appendChild(wrapper);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function mostrarTyping() {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'typing-wrapper';
+      wrapper.id = 'typing';
+
+      const typing = document.createElement('div');
+      typing.className = 'typing';
+      typing.innerHTML = '<span></span><span></span><span></span>';
+
+      wrapper.appendChild(typing);
+      chatEl.appendChild(wrapper);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function quitarTyping() {
+      const t = document.getElementById('typing');
+      if (t) t.remove();
+    }
+
+    async function enviar() {
+      const mensaje = inputEl.value.trim();
+      if (!mensaje) return;
+
+      agregarMensaje(mensaje, 'usuario');
+      inputEl.value = '';
+      inputEl.style.height = 'auto';
+      btnEl.disabled = true;
+      mostrarTyping();
+
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mensaje })
+        });
+
+        const data = await res.json();
+        quitarTyping();
+
+        if (data.respuesta) {
+          agregarMensaje(data.respuesta, 'akuzfiro');
+        } else {
+          agregarMensaje('Error: ' + (data.error || 'desconocido'), 'akuzfiro');
+        }
+      } catch (err) {
+        quitarTyping();
+        agregarMensaje('No puedo conectarme al servidor. ¿Está corriendo app.py?', 'akuzfiro');
+      }
+
+      btnEl.disabled = false;
+      inputEl.focus();
+    }
+  </script>
+
+</body>
+</html>
