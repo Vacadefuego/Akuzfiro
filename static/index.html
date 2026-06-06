@@ -655,9 +655,10 @@
     });
 
     function procesarRespuesta(texto) {
-      // Detectar bloques de archivo en la respuesta
       const regexExcel = /\[ARCHIVO_EXCEL\]([\s\S]*?)\[\/ARCHIVO_EXCEL\]/;
       const regexPDF = /\[ARCHIVO_PDF\]([\s\S]*?)\[\/ARCHIVO_PDF\]/;
+      const regexWord = /\[ARCHIVO_WORD\]([\s\S]*?)\[\/ARCHIVO_WORD\]/;
+      const regexPPTX = /\[ARCHIVO_PPTX\]([\s\S]*?)\[\/ARCHIVO_PPTX\]/;
 
       let textoLimpio = texto;
       let archivoData = null;
@@ -665,28 +666,27 @@
 
       const matchExcel = texto.match(regexExcel);
       const matchPDF = texto.match(regexPDF);
+      const matchWord = texto.match(regexWord);
+      const matchPPTX = texto.match(regexPPTX);
 
       if (matchExcel) {
-        try {
-          archivoData = JSON.parse(matchExcel[1]);
-          tipoArchivo = 'excel';
-          textoLimpio = texto.replace(regexExcel, '').trim();
-        } catch(e) {}
+        try { archivoData = JSON.parse(matchExcel[1]); tipoArchivo = 'excel'; textoLimpio = texto.replace(regexExcel, '').trim(); } catch(e) {}
       } else if (matchPDF) {
-        try {
-          archivoData = JSON.parse(matchPDF[1]);
-          tipoArchivo = 'pdf';
-          textoLimpio = texto.replace(regexPDF, '').trim();
-        } catch(e) {}
+        try { archivoData = JSON.parse(matchPDF[1]); tipoArchivo = 'pdf'; textoLimpio = texto.replace(regexPDF, '').trim(); } catch(e) {}
+      } else if (matchWord) {
+        try { archivoData = JSON.parse(matchWord[1]); tipoArchivo = 'word'; textoLimpio = texto.replace(regexWord, '').trim(); } catch(e) {}
+      } else if (matchPPTX) {
+        try { archivoData = JSON.parse(matchPPTX[1]); tipoArchivo = 'pptx'; textoLimpio = texto.replace(regexPPTX, '').trim(); } catch(e) {}
       }
 
       return { textoLimpio, archivoData, tipoArchivo };
     }
 
     async function descargarArchivo(tipo, datos) {
-      const endpoint = tipo === 'excel' ? '/generar-excel' : '/generar-pdf';
+      const endpoints = { excel: '/generar-excel', pdf: '/generar-pdf', word: '/generar-word', pptx: '/generar-pptx' };
+      const extensiones = { excel: '.xlsx', pdf: '.pdf', word: '.docx', pptx: '.pptx' };
       try {
-        const res = await fetch(endpoint, {
+        const res = await fetch(endpoints[tipo], {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(datos)
@@ -696,7 +696,7 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = datos.titulo + (tipo === 'excel' ? '.xlsx' : '.pdf');
+        a.download = datos.titulo + extensiones[tipo];
         a.click();
         URL.revokeObjectURL(url);
       } catch(e) {
@@ -705,9 +705,11 @@
     }
 
     function agregarBtnDescarga(wrapper, tipo, datos) {
+      const iconos = { excel: '📊', pdf: '📄', word: '📝', pptx: '📊' };
+      const nombres = { excel: 'Excel', pdf: 'PDF', word: 'Word', pptx: 'PowerPoint' };
       const btn = document.createElement('button');
       btn.className = 'btn-descarga';
-      btn.innerHTML = tipo === 'excel' ? '📊 Descargar Excel' : '📄 Descargar PDF';
+      btn.innerHTML = `${iconos[tipo]} Descargar ${nombres[tipo]}`;
       btn.onclick = () => descargarArchivo(tipo, datos);
       wrapper.appendChild(btn);
     }

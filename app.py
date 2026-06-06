@@ -19,6 +19,13 @@ from reportlab.lib.units import inch, cm
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+from docx import Document
+from docx.shared import Pt, RGBColor, Inches, Cm
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from pptx import Presentation
+from pptx.util import Inches as PInches, Pt as PPt, Emu
+from pptx.dml.color import RGBColor as PRGBColor
+from pptx.enum.text import PP_ALIGN
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
@@ -62,16 +69,22 @@ Ejemplo de cómo SÍ debes sonar:
 "Listo Gustavo, aquí tienes: https://ejemplo.com — esto es lo que encontré. ¿Quieres que busque algo más específico?"
 
 CAPACIDAD DE GENERAR ARCHIVOS:
-Puedes generar archivos Excel (.xlsx) y PDF reales para descargar.
-Cuando Gustavo pida crear un archivo, responde con texto normal Y agrega al final un bloque JSON especial con este formato exacto:
+Puedes generar archivos Excel (.xlsx), PDF, Word (.docx) y PowerPoint (.pptx) reales para descargar.
+Cuando Gustavo pida crear un archivo, responde con texto normal Y agrega al final un bloque JSON especial:
 
 Para Excel:
-[ARCHIVO_EXCEL]{"titulo":"Nombre del archivo","encabezados":["Col1","Col2"],"filas":[["dato1","dato2"]],"secciones":[{"nombre":"Sección A","filas":[["dato","dato"]]}]}[/ARCHIVO_EXCEL]
+[ARCHIVO_EXCEL]{"titulo":"Nombre","encabezados":["Col1","Col2"],"filas":[["dato1","dato2"]],"secciones":[{"nombre":"Sección A","filas":[["dato","dato"]]}]}[/ARCHIVO_EXCEL]
 
 Para PDF:
-[ARCHIVO_PDF]{"titulo":"Nombre del archivo","contenido":"Texto del documento","secciones":[{"titulo":"Sección","contenido":"Texto"}],"tabla":{"encabezados":["Col1"],"filas":[["dato"]]}}[/ARCHIVO_PDF]
+[ARCHIVO_PDF]{"titulo":"Nombre","contenido":"Texto","secciones":[{"titulo":"Sección","contenido":"Texto"}],"tabla":{"encabezados":["Col1"],"filas":[["dato"]]}}[/ARCHIVO_PDF]
 
-IMPORTANTE: El JSON debe ser válido. Usa secciones para agrupar datos en Excel. El bloque va al final de tu respuesta.
+Para Word:
+[ARCHIVO_WORD]{"titulo":"Nombre","contenido":"Texto del documento","secciones":[{"titulo":"Sección","contenido":"Texto","tabla":{"encabezados":["Col1"],"filas":[["dato"]]}}]}[/ARCHIVO_WORD]
+
+Para PowerPoint:
+[ARCHIVO_PPTX]{"titulo":"Título de la presentación","diapositivas":[{"titulo":"Diapositiva 1","puntos":["Punto 1","Punto 2"]},{"titulo":"Diapositiva 2","contenido":"Texto libre"}]}[/ARCHIVO_PPTX]
+
+IMPORTANTE: El JSON debe ser válido. El bloque va al final de tu respuesta. Nunca pongas texto después del bloque.
 """
 
 
@@ -364,6 +377,187 @@ def agregar_hecho():
         guardar_hecho(hecho)
         return jsonify({"ok": True})
     return jsonify({"error": "Hecho vacío"}), 400
+
+@app.route("/generar-word", methods=["POST"])
+def generar_word():
+    try:
+        data = request.json
+        titulo = data.get("titulo", "Documento")
+        contenido = data.get("contenido", "")
+        secciones = data.get("secciones", [])
+
+        doc = Document()
+
+        # Estilos
+        estilo_normal = doc.styles["Normal"]
+        estilo_normal.font.name = "Calibri"
+        estilo_normal.font.size = Pt(11)
+
+        # Título
+        titulo_par = doc.add_heading(titulo, level=0)
+        titulo_par.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for run in titulo_par.runs:
+            run.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
+            run.font.size = Pt(18)
+
+        doc.add_paragraph()
+
+        # Contenido principal
+        if contenido:
+            for linea in contenido.split("\n"):
+                if linea.strip():
+                    p = doc.add_paragraph(linea.strip())
+                    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+        # Secciones
+        for seccion in secciones:
+            doc.add_paragraph()
+            h = doc.add_heading(seccion.get("titulo", ""), level=1)
+            for run in h.runs:
+                run.font.color.rgb = RGBColor(0x2E, 0x75, 0xB6)
+            texto_sec = seccion.get("contenido", "")
+            for linea in texto_sec.split("\n"):
+                if linea.strip():
+                    p = doc.add_paragraph(linea.strip())
+                    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+            # Tabla de sección si existe
+            tabla_sec = seccion.get("tabla", None)
+            if tabla_sec:
+                encabezados = tabla_sec.get("encabezados", [])
+                filas = tabla_sec.get("filas", [])
+                if encabezados:
+                    t = doc.add_table(rows=1, cols=len(encabezados))
+                    t.style = "Table Grid"
+                    hdr = t.rows[0].cells
+                    for i, enc in enumerate(encabezados):
+                        hdr[i].text = enc
+                        hdr[i].paragraphs[0].runs[0].font.bold = True
+                        hdr[i].paragraphs[0].runs[0].font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                    for fila in filas:
+                        row = t.add_row().cells
+                        for i, val in enumerate(fila):
+                            if i < len(row):
+                                row[i].text = str(val)
+
+        buf = io.BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+        nombre_archivo = f"{titulo.replace(' ', '_')}.docx"
+        return send_file(buf,
+                        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        as_attachment=True, download_name=nombre_archivo)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/generar-pptx", methods=["POST"])
+def generar_pptx():
+    try:
+        data = request.json
+        titulo = data.get("titulo", "Presentación")
+        diapositivas = data.get("diapositivas", [])
+
+        prs = Presentation()
+        prs.slide_width = Emu(9144000)
+        prs.slide_height = Emu(5143500)
+
+        COLOR_FONDO = PRGBColor(0x1F, 0x38, 0x64)
+        COLOR_ACENTO = PRGBColor(0x2E, 0x75, 0xB6)
+        COLOR_TEXTO = PRGBColor(0xFF, 0xFF, 0xFF)
+        COLOR_SUBTEXTO = PRGBColor(0xD6, 0xE4, 0xF0)
+
+        def set_bg(slide, color):
+            fill = slide.background.fill
+            fill.solid()
+            fill.fore_color.rgb = color
+
+        # Diapositiva de título
+        lay_blank = prs.slide_layouts[6]
+        slide_titulo = prs.slides.add_slide(lay_blank)
+        set_bg(slide_titulo, COLOR_FONDO)
+
+        txb = slide_titulo.shapes.add_textbox(PInches(0.5), PInches(1.5), PInches(9), PInches(1.5))
+        tf = txb.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        run = p.add_run()
+        run.text = titulo
+        run.font.size = PPt(40)
+        run.font.bold = True
+        run.font.color.rgb = COLOR_TEXTO
+
+        # Línea decorativa
+        line = slide_titulo.shapes.add_shape(1, PInches(2), PInches(3.2), PInches(5), Emu(50000))
+        line.fill.solid()
+        line.fill.fore_color.rgb = COLOR_ACENTO
+        line.line.fill.background()
+
+        # Diapositivas de contenido
+        for i, diap in enumerate(diapositivas):
+            slide = prs.slides.add_slide(lay_blank)
+            set_bg(slide, COLOR_FONDO)
+
+            # Número de diapositiva
+            num_txb = slide.shapes.add_textbox(PInches(8.5), PInches(0.1), PInches(0.5), PInches(0.3))
+            num_tf = num_txb.text_frame
+            num_p = num_tf.paragraphs[0]
+            num_run = num_p.add_run()
+            num_run.text = str(i + 1)
+            num_run.font.size = PPt(12)
+            num_run.font.color.rgb = COLOR_SUBTEXTO
+
+            # Título de diapositiva
+            titulo_diap = diap.get("titulo", "")
+            txb_t = slide.shapes.add_textbox(PInches(0.4), PInches(0.3), PInches(8.5), PInches(0.8))
+            tf_t = txb_t.text_frame
+            p_t = tf_t.paragraphs[0]
+            run_t = p_t.add_run()
+            run_t.text = titulo_diap
+            run_t.font.size = PPt(28)
+            run_t.font.bold = True
+            run_t.font.color.rgb = PRGBColor(0x00, 0xD4, 0xFF)
+
+            # Línea bajo título
+            sep = slide.shapes.add_shape(1, PInches(0.4), PInches(1.1), PInches(8.5), Emu(40000))
+            sep.fill.solid()
+            sep.fill.fore_color.rgb = COLOR_ACENTO
+            sep.line.fill.background()
+
+            # Contenido
+            puntos = diap.get("puntos", [])
+            contenido_texto = diap.get("contenido", "")
+
+            txb_c = slide.shapes.add_textbox(PInches(0.4), PInches(1.3), PInches(8.5), PInches(3.5))
+            tf_c = txb_c.text_frame
+            tf_c.word_wrap = True
+
+            if puntos:
+                for j, punto in enumerate(puntos):
+                    p_c = tf_c.paragraphs[0] if j == 0 else tf_c.add_paragraph()
+                    p_c.space_before = PPt(6)
+                    run_c = p_c.add_run()
+                    run_c.text = f"• {punto}"
+                    run_c.font.size = PPt(18)
+                    run_c.font.color.rgb = COLOR_SUBTEXTO
+            elif contenido_texto:
+                p_c = tf_c.paragraphs[0]
+                run_c = p_c.add_run()
+                run_c.text = contenido_texto
+                run_c.font.size = PPt(18)
+                run_c.font.color.rgb = COLOR_SUBTEXTO
+
+        buf = io.BytesIO()
+        prs.save(buf)
+        buf.seek(0)
+        nombre_archivo = f"{titulo.replace(' ', '_')}.pptx"
+        return send_file(buf,
+                        mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        as_attachment=True, download_name=nombre_archivo)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/generar-excel", methods=["POST"])
 def generar_excel():
