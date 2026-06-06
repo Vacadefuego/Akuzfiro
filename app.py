@@ -70,21 +70,25 @@ Ejemplo de cómo SÍ debes sonar:
 
 CAPACIDAD DE GENERAR ARCHIVOS:
 Puedes generar archivos Excel (.xlsx), PDF, Word (.docx) y PowerPoint (.pptx) reales para descargar.
-Cuando Gustavo pida crear un archivo, responde con texto normal Y agrega al final un bloque JSON especial:
+Cuando Gustavo pida crear un archivo, sigue estas reglas ESTRICTAS:
+1. Responde con UN SOLO párrafo corto confirmando lo que vas a crear
+2. Inmediatamente después pon el bloque JSON del archivo
+3. NO escribas el contenido del documento como texto en el chat — todo va dentro del JSON
+4. El bloque JSON debe ser COMPLETO y VÁLIDO — nunca lo cortes
 
 Para Excel:
 [ARCHIVO_EXCEL]{"titulo":"Nombre","encabezados":["Col1","Col2"],"filas":[["dato1","dato2"]],"secciones":[{"nombre":"Sección A","filas":[["dato","dato"]]}]}[/ARCHIVO_EXCEL]
 
 Para PDF:
-[ARCHIVO_PDF]{"titulo":"Nombre","contenido":"Texto","secciones":[{"titulo":"Sección","contenido":"Texto"}],"tabla":{"encabezados":["Col1"],"filas":[["dato"]]}}[/ARCHIVO_PDF]
+[ARCHIVO_PDF]{"titulo":"Nombre","contenido":"Texto breve","secciones":[{"titulo":"Sección","contenido":"Texto"}]}[/ARCHIVO_PDF]
 
 Para Word:
-[ARCHIVO_WORD]{"titulo":"Nombre","contenido":"Texto del documento","secciones":[{"titulo":"Sección","contenido":"Texto","tabla":{"encabezados":["Col1"],"filas":[["dato"]]}}]}[/ARCHIVO_WORD]
+[ARCHIVO_WORD]{"titulo":"Nombre","contenido":"Texto","secciones":[{"titulo":"Sección","contenido":"Texto"}]}[/ARCHIVO_WORD]
 
 Para PowerPoint:
-[ARCHIVO_PPTX]{"titulo":"Título de la presentación","diapositivas":[{"titulo":"Diapositiva 1","puntos":["Punto 1","Punto 2"]},{"titulo":"Diapositiva 2","contenido":"Texto libre"}]}[/ARCHIVO_PPTX]
+[ARCHIVO_PPTX]{"titulo":"Título","diapositivas":[{"titulo":"Diap 1","puntos":["Punto 1","Punto 2"]}]}[/ARCHIVO_PPTX]
 
-IMPORTANTE: El JSON debe ser válido. El bloque va al final de tu respuesta. Nunca pongas texto después del bloque.
+CRÍTICO: El JSON debe cerrarse completamente. Máximo 6 secciones o diapositivas para no exceder el límite.
 """
 
 
@@ -316,12 +320,17 @@ def chat():
         {"role": "user", "content": mensaje}
     ]
 
+    # Detectar si el mensaje pide crear un archivo
+    palabras_archivo = ["crea", "crear", "genera", "generar", "haz", "hacer", "excel", "pdf", "word", "powerpoint", "pptx", "documento", "presentacion", "presentación", "reporte", "bitacora", "bitácora"]
+    es_archivo = any(p in mensaje.lower() for p in palabras_archivo)
+    tokens_max = 1500 if es_archivo else 800
+
     try:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
             temperature=0.85,
-            max_tokens=800,
+            max_tokens=tokens_max,
             frequency_penalty=0.3,
             presence_penalty=0.1
         )
