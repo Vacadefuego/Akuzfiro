@@ -475,6 +475,23 @@
       0%, 100% { box-shadow: 0 0 0 0 rgba(255, 50, 50, 0.3); }
       50% { box-shadow: 0 0 0 8px rgba(255, 50, 50, 0); }
     }
+
+    .btn-descarga {
+      margin-top: 8px;
+      padding: 8px 16px;
+      background: linear-gradient(135deg, #00d4ff22, #7000ff22);
+      border: 1px solid rgba(0, 212, 255, 0.4);
+      border-radius: 8px;
+      color: #00d4ff;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'Inter', sans-serif;
+    }
+    .btn-descarga:hover {
+      background: linear-gradient(135deg, #00d4ff33, #7000ff33);
+      box-shadow: 0 0 12px rgba(0, 212, 255, 0.2);
+    }
   </style>
 </head>
 <body>
@@ -637,7 +654,63 @@
       }
     });
 
-    function linkifyText(text) {
+    function procesarRespuesta(texto) {
+      // Detectar bloques de archivo en la respuesta
+      const regexExcel = /\[ARCHIVO_EXCEL\]([\s\S]*?)\[\/ARCHIVO_EXCEL\]/;
+      const regexPDF = /\[ARCHIVO_PDF\]([\s\S]*?)\[\/ARCHIVO_PDF\]/;
+
+      let textoLimpio = texto;
+      let archivoData = null;
+      let tipoArchivo = null;
+
+      const matchExcel = texto.match(regexExcel);
+      const matchPDF = texto.match(regexPDF);
+
+      if (matchExcel) {
+        try {
+          archivoData = JSON.parse(matchExcel[1]);
+          tipoArchivo = 'excel';
+          textoLimpio = texto.replace(regexExcel, '').trim();
+        } catch(e) {}
+      } else if (matchPDF) {
+        try {
+          archivoData = JSON.parse(matchPDF[1]);
+          tipoArchivo = 'pdf';
+          textoLimpio = texto.replace(regexPDF, '').trim();
+        } catch(e) {}
+      }
+
+      return { textoLimpio, archivoData, tipoArchivo };
+    }
+
+    async function descargarArchivo(tipo, datos) {
+      const endpoint = tipo === 'excel' ? '/generar-excel' : '/generar-pdf';
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(datos)
+        });
+        if (!res.ok) throw new Error('Error generando archivo');
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = datos.titulo + (tipo === 'excel' ? '.xlsx' : '.pdf');
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch(e) {
+        alert('Error descargando el archivo: ' + e.message);
+      }
+    }
+
+    function agregarBtnDescarga(wrapper, tipo, datos) {
+      const btn = document.createElement('button');
+      btn.className = 'btn-descarga';
+      btn.innerHTML = tipo === 'excel' ? '📊 Descargar Excel' : '📄 Descargar PDF';
+      btn.onclick = () => descargarArchivo(tipo, datos);
+      wrapper.appendChild(btn);
+    }
       const urlRegex = /(https?:\/\/[^\s\)\]\,\"\']+)/g;
       const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       return escaped.replace(urlRegex, url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
@@ -658,13 +731,30 @@
 
       const contenido = document.createElement('div');
       contenido.className = 'mensaje-text';
-      contenido.innerHTML = linkifyText(texto);
 
+      let textoFinal = texto;
+      let archivoData = null;
+      let tipoArchivo = null;
+
+      if (tipo === 'akuzfiro') {
+        const resultado = procesarRespuesta(texto);
+        textoFinal = resultado.textoLimpio;
+        archivoData = resultado.archivoData;
+        tipoArchivo = resultado.tipoArchivo;
+      }
+
+      contenido.innerHTML = linkifyText(textoFinal);
       burbuja.appendChild(contenido);
       wrapper.appendChild(label);
       wrapper.appendChild(burbuja);
+
+      if (archivoData && tipoArchivo) {
+        agregarBtnDescarga(wrapper, tipoArchivo, archivoData);
+      }
+
       chatEl.appendChild(wrapper);
       chatEl.scrollTop = chatEl.scrollHeight;
+      return textoFinal;
     }
 
     function mostrarTyping() {
@@ -705,8 +795,8 @@
         quitarTyping();
 
         if (data.respuesta) {
-          agregarMensaje(data.respuesta, 'akuzfiro');
-          if (vozActiva) hablar(data.respuesta);
+          const textoFinal = agregarMensaje(data.respuesta, 'akuzfiro');
+          if (vozActiva) hablar(textoFinal || data.respuesta);
         } else {
           agregarMensaje('Error: ' + (data.error || 'desconocido'), 'akuzfiro');
         }

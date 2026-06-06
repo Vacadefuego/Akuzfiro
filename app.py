@@ -1,11 +1,24 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_file
 from flask_cors import CORS
 from groq import Groq
 from duckduckgo_search import DDGS
 import os
+import io
+import json
+import re
+import base64
 import pg8000.native
 import httpx
 from datetime import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch, cm
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
@@ -47,6 +60,18 @@ Reglas de comportamiento — MUY IMPORTANTES:
 
 Ejemplo de cómo SÍ debes sonar:
 "Listo Gustavo, aquí tienes: https://ejemplo.com — esto es lo que encontré. ¿Quieres que busque algo más específico?"
+
+CAPACIDAD DE GENERAR ARCHIVOS:
+Puedes generar archivos Excel (.xlsx) y PDF reales para descargar.
+Cuando Gustavo pida crear un archivo, responde con texto normal Y agrega al final un bloque JSON especial con este formato exacto:
+
+Para Excel:
+[ARCHIVO_EXCEL]{"titulo":"Nombre del archivo","encabezados":["Col1","Col2"],"filas":[["dato1","dato2"]],"secciones":[{"nombre":"Sección A","filas":[["dato","dato"]]}]}[/ARCHIVO_EXCEL]
+
+Para PDF:
+[ARCHIVO_PDF]{"titulo":"Nombre del archivo","contenido":"Texto del documento","secciones":[{"titulo":"Sección","contenido":"Texto"}],"tabla":{"encabezados":["Col1"],"filas":[["dato"]]}}[/ARCHIVO_PDF]
+
+IMPORTANTE: El JSON debe ser válido. Usa secciones para agrupar datos en Excel. El bloque va al final de tu respuesta.
 """
 
 
@@ -339,6 +364,178 @@ def agregar_hecho():
         guardar_hecho(hecho)
         return jsonify({"ok": True})
     return jsonify({"error": "Hecho vacío"}), 400
+
+@app.route("/generar-excel", methods=["POST"])
+def generar_excel():
+    try:
+        data = request.json
+        titulo = data.get("titulo", "Documento")
+        encabezados = data.get("encabezados", [])
+        filas = data.get("filas", [])
+        secciones = data.get("secciones", [])  # Para documentos con secciones/grupos
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = titulo[:31]
+
+        # Estilos
+        estilo_titulo = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+        fill_titulo = PatternFill("solid", fgColor="1F3864")
+        estilo_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        fill_header = PatternFill("solid", fgColor="2E75B6")
+        fill_seccion = PatternFill("solid", fgColor="D6E4F0")
+        estilo_seccion = Font(name="Calibri", size=11, bold=True, color="1F3864")
+        borde = Border(
+            left=Side(style="thin"), right=Side(style="thin"),
+            top=Side(style="thin"), bottom=Side(style="thin")
+        )
+        alineacion_centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        fila_actual = 1
+
+        # Título principal
+        num_cols = max(len(encabezados), 1)
+        ws.merge_cells(f"A{fila_actual}:{get_column_letter(num_cols)}{fila_actual}")
+        celda_titulo = ws.cell(row=fila_actual, column=1, value=titulo)
+        celda_titulo.font = estilo_titulo
+        celda_titulo.fill = fill_titulo
+        celda_titulo.alignment = alineacion_centro
+        ws.row_dimensions[fila_actual].height = 30
+        fila_actual += 1
+
+        # Encabezados
+        if encabezados:
+            for col, enc in enumerate(encabezados, 1):
+                c = ws.cell(row=fila_actual, column=col, value=enc)
+                c.font = estilo_header
+                c.fill = fill_header
+                c.alignment = alineacion_centro
+                c.border = borde
+            ws.row_dimensions[fila_actual].height = 20
+            fila_actual += 1
+
+        # Filas simples
+        for i, fila in enumerate(filas):
+            fill_fila = PatternFill("solid", fgColor="EBF3FB" if i % 2 == 0 else "FFFFFF")
+            for col, val in enumerate(fila, 1):
+                c = ws.cell(row=fila_actual, column=col, value=val)
+                c.fill = fill_fila
+                c.border = borde
+                c.alignment = Alignment(vertical="center", wrap_text=True)
+            fila_actual += 1
+
+        # Secciones (grupos con título y filas)
+        for seccion in secciones:
+            nombre_sec = seccion.get("nombre", "")
+            filas_sec = seccion.get("filas", [])
+
+            # Título de sección
+            ws.merge_cells(f"A{fila_actual}:{get_column_letter(num_cols)}{fila_actual}")
+            c = ws.cell(row=fila_actual, column=1, value=nombre_sec)
+            c.font = estilo_seccion
+            c.fill = fill_seccion
+            c.alignment = alineacion_centro
+            c.border = borde
+            ws.row_dimensions[fila_actual].height = 18
+            fila_actual += 1
+
+            for i, fila in enumerate(filas_sec):
+                fill_fila = PatternFill("solid", fgColor="EBF3FB" if i % 2 == 0 else "FFFFFF")
+                for col, val in enumerate(fila, 1):
+                    c = ws.cell(row=fila_actual, column=col, value=val)
+                    c.fill = fill_fila
+                    c.border = borde
+                    c.alignment = Alignment(vertical="center", wrap_text=True)
+                fila_actual += 1
+
+        # Ajustar ancho de columnas
+        for col in range(1, num_cols + 1):
+            max_len = 0
+            for row in ws.iter_rows(min_col=col, max_col=col):
+                for cell in row:
+                    if cell.value:
+                        max_len = max(max_len, len(str(cell.value)))
+            ws.column_dimensions[get_column_letter(col)].width = min(max(max_len + 2, 12), 40)
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        nombre_archivo = f"{titulo.replace(' ', '_')}.xlsx"
+        return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        as_attachment=True, download_name=nombre_archivo)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/generar-pdf", methods=["POST"])
+def generar_pdf():
+    try:
+        data = request.json
+        titulo = data.get("titulo", "Documento")
+        contenido = data.get("contenido", "")
+        secciones = data.get("secciones", [])
+        tabla = data.get("tabla", None)
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4,
+                               rightMargin=2*cm, leftMargin=2*cm,
+                               topMargin=2*cm, bottomMargin=2*cm)
+
+        estilos = getSampleStyleSheet()
+        estilo_titulo = ParagraphStyle("titulo", parent=estilos["Title"],
+                                      fontSize=18, textColor=colors.HexColor("#1F3864"),
+                                      spaceAfter=12, alignment=TA_CENTER)
+        estilo_subtitulo = ParagraphStyle("subtitulo", parent=estilos["Heading2"],
+                                         fontSize=13, textColor=colors.HexColor("#2E75B6"),
+                                         spaceAfter=6)
+        estilo_cuerpo = ParagraphStyle("cuerpo", parent=estilos["Normal"],
+                                      fontSize=11, leading=16, spaceAfter=8,
+                                      alignment=TA_JUSTIFY)
+
+        elementos = []
+        elementos.append(Paragraph(titulo, estilo_titulo))
+        elementos.append(Spacer(1, 0.3*inch))
+
+        if contenido:
+            for parrafo in contenido.split("\n"):
+                if parrafo.strip():
+                    elementos.append(Paragraph(parrafo.strip(), estilo_cuerpo))
+
+        for seccion in secciones:
+            elementos.append(Spacer(1, 0.2*inch))
+            elementos.append(Paragraph(seccion.get("titulo", ""), estilo_subtitulo))
+            for p in seccion.get("contenido", "").split("\n"):
+                if p.strip():
+                    elementos.append(Paragraph(p.strip(), estilo_cuerpo))
+
+        if tabla:
+            elementos.append(Spacer(1, 0.2*inch))
+            encabezados_tabla = tabla.get("encabezados", [])
+            filas_tabla = tabla.get("filas", [])
+            tabla_data = [encabezados_tabla] + filas_tabla
+            t = Table(tabla_data, repeatRows=1)
+            t.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2E75B6")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 11),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#EBF3FB"), colors.white]),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#AAAAAA")),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]))
+            elementos.append(t)
+
+        doc.build(elementos)
+        buf.seek(0)
+        nombre_archivo = f"{titulo.replace(' ', '_')}.pdf"
+        return send_file(buf, mimetype="application/pdf",
+                        as_attachment=True, download_name=nombre_archivo)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/")
 def index():
