@@ -711,6 +711,8 @@
       btn.onclick = () => descargarArchivo(tipo, datos);
       wrapper.appendChild(btn);
     }
+
+    function linkifyText(text) {
       const urlRegex = /(https?:\/\/[^\s\)\]\,\"\']+)/g;
       const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       return escaped.replace(urlRegex, url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
@@ -754,7 +756,7 @@
 
       chatEl.appendChild(wrapper);
       chatEl.scrollTop = chatEl.scrollHeight;
-      return textoFinal;
+      return textoFinal || texto;
     }
 
     function mostrarTyping() {
