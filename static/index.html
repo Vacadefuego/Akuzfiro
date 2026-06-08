@@ -821,6 +821,7 @@
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
+        audio.playbackRate = 1.25;  // 25% más rápido
         audio.play();
         audio.onended = () => URL.revokeObjectURL(url);
       } catch(e) {
