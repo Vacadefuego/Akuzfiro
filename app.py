@@ -24,6 +24,7 @@ from docx.shared import Pt, RGBColor, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from gtts import gTTS
 from pptx import Presentation
+import pytz
 from pptx.util import Inches as PInches, Pt as PPt, Emu
 from pptx.dml.color import RGBColor as PRGBColor
 from pptx.enum.text import PP_ALIGN
@@ -83,10 +84,10 @@ LO QUE SABES HACER:
 
 CONOCIMIENTO DE GUSTAVO:
 - Se llama Gustavo
+- Tiene 29 años
 - Vive en Xalapa, Veracruz, México
-- Estudia arquitectura en la Universidad Euro Hispanoamericana
-- Hace servicio social en la universidad
-- Tiene 22 años
+- Estudió Educación Física y Nutrición Deportiva
+- Actualmente hace servicio social en la Universidad Euro Hispanoamericana
 - Le gusta la tecnología, los animales y quiere aprender programación
 - Usa Akuzfiro desde su computadora y su teléfono
 - Creó a Akuzfiro con ayuda de Kiro (IDE de Amazon)
@@ -332,7 +333,8 @@ def chat():
     if not mensaje:
         return jsonify({"error": "Mensaje vacío"}), 400
 
-    ahora = datetime.now().strftime("%A %d de %B de %Y, %H:%M hrs")
+    tz_mexico = pytz.timezone("America/Mexico_City")
+    ahora = datetime.now(tz_mexico).strftime("%A %d de %B de %Y, %H:%M hrs")
     hechos = cargar_hechos()
     conversaciones = cargar_conversaciones(10)
 
