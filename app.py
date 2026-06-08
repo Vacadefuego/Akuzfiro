@@ -22,6 +22,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from gtts import gTTS
 from pptx import Presentation
 from pptx.util import Inches as PInches, Pt as PPt, Emu
 from pptx.dml.color import RGBColor as PRGBColor
@@ -154,6 +155,14 @@ def init_db():
             id SERIAL PRIMARY KEY,
             fecha TIMESTAMP DEFAULT NOW(),
             hecho TEXT NOT NULL
+        )
+    """)
+    conn.run("""
+        CREATE TABLE IF NOT EXISTS comandos (
+            id SERIAL PRIMARY KEY,
+            nombre TEXT UNIQUE NOT NULL,
+            acciones TEXT NOT NULL,
+            fecha TIMESTAMP DEFAULT NOW()
         )
     """)
     conn.close()
@@ -327,6 +336,15 @@ def chat():
     hechos = cargar_hechos()
     conversaciones = cargar_conversaciones(10)
 
+    # Cargar comandos personalizados
+    try:
+        conn = get_conn()
+        rows = conn.run("SELECT nombre, acciones FROM comandos ORDER BY id")
+        conn.close()
+        comandos = [{"nombre": r[0], "acciones": r[1]} for r in rows]
+    except Exception:
+        comandos = []
+
     system_prompt = PERSONALIDAD
     system_prompt += f"\n\nFECHA Y HORA ACTUAL: {ahora} (hora del servidor)"
 
@@ -334,6 +352,12 @@ def chat():
         system_prompt += "\n\nLo que sé de Gustavo:\n"
         for h in hechos:
             system_prompt += f"- {h}\n"
+
+    if comandos:
+        system_prompt += "\n\nComandos personalizados de Gustavo:\n"
+        for c in comandos:
+            system_prompt += f"- '{c['nombre']}': {c['acciones']}\n"
+        system_prompt += "Cuando Gustavo diga el nombre de un comando, ejecuta sus acciones.\n"
 
     if conversaciones:
         system_prompt += "\n\nConversaciones recientes:\n"
@@ -418,6 +442,70 @@ def agregar_hecho():
         guardar_hecho(hecho)
         return jsonify({"ok": True})
     return jsonify({"error": "Hecho vacío"}), 400
+
+@app.route("/tts", methods=["POST"])
+def tts():
+    """Convierte texto a voz con gTTS y devuelve MP3."""
+    try:
+        data = request.json
+        texto = data.get("texto", "")
+        if not texto:
+            return jsonify({"error": "Texto vacío"}), 400
+        # Limpiar URLs y markdown
+        texto_limpio = re.sub(r'https?://\S+', '', texto)
+        texto_limpio = re.sub(r'\*\*|__|\*|_|`', '', texto_limpio)
+        texto_limpio = texto_limpio.strip()[:800]
+        buf = io.BytesIO()
+        tts_obj = gTTS(text=texto_limpio, lang='es', tld='com.mx', slow=False)
+        tts_obj.write_to_fp(buf)
+        buf.seek(0)
+        return send_file(buf, mimetype="audio/mpeg")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """Evita el error 404 del favicon."""
+    return "", 204
+
+
+@app.route("/comandos", methods=["GET"])
+def ver_comandos():
+    try:
+        conn = get_conn()
+        rows = conn.run("SELECT nombre, acciones FROM comandos ORDER BY id")
+        conn.close()
+        return jsonify([{"nombre": r[0], "acciones": r[1]} for r in rows])
+    except Exception:
+        return jsonify([])
+
+@app.route("/comandos", methods=["POST"])
+def guardar_comando():
+    try:
+        data = request.json
+        nombre = data.get("nombre", "").strip()
+        acciones = data.get("acciones", "").strip()
+        if not nombre or not acciones:
+            return jsonify({"error": "Faltan datos"}), 400
+        conn = get_conn()
+        conn.run("INSERT INTO comandos (nombre, acciones) VALUES (:n, :a) ON CONFLICT (nombre) DO UPDATE SET acciones = :a",
+                 n=nombre, a=acciones)
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/comandos/<nombre>", methods=["DELETE"])
+def eliminar_comando(nombre):
+    try:
+        conn = get_conn()
+        conn.run("DELETE FROM comandos WHERE nombre = :n", n=nombre)
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/generar-word", methods=["POST"])
 def generar_word():

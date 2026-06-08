@@ -492,6 +492,145 @@
       background: linear-gradient(135deg, #00d4ff33, #7000ff33);
       box-shadow: 0 0 12px rgba(0, 212, 255, 0.2);
     }
+
+    /* PANEL LATERAL */
+    #panel {
+      position: fixed;
+      top: 60px;
+      right: -340px;
+      width: 320px;
+      height: calc(100vh - 60px);
+      background: rgba(8, 8, 20, 0.98);
+      border-left: 1px solid var(--border);
+      z-index: 100;
+      transition: right 0.3s ease;
+      overflow-y: auto;
+      padding: 20px;
+    }
+    #panel.abierto { right: 0; }
+    #panel::-webkit-scrollbar { width: 3px; }
+    #panel::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 3px; }
+
+    .panel-titulo {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 3px;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-cerrar {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 1.2rem;
+    }
+    .panel-seccion {
+      margin-bottom: 24px;
+    }
+    .panel-seccion-titulo {
+      font-size: 0.7rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 4px;
+    }
+    .hecho-item {
+      font-size: 0.82rem;
+      color: var(--text);
+      padding: 6px 10px;
+      background: rgba(0, 212, 255, 0.05);
+      border-radius: 6px;
+      margin-bottom: 4px;
+      border-left: 2px solid var(--accent);
+    }
+    .comando-item {
+      font-size: 0.82rem;
+      color: var(--text);
+      padding: 8px 10px;
+      background: rgba(112, 0, 255, 0.08);
+      border-radius: 6px;
+      margin-bottom: 6px;
+      border-left: 2px solid var(--accent2);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .comando-item:hover { background: rgba(112, 0, 255, 0.15); }
+    .comando-nombre { font-weight: 600; color: #a78bfa; }
+    .comando-eliminar {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 0.8rem;
+      padding: 2px 6px;
+    }
+    .comando-eliminar:hover { color: #ff6b6b; }
+    .nuevo-comando {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .nuevo-comando input, .nuevo-comando textarea {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.82rem;
+      padding: 8px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      resize: none;
+    }
+    .nuevo-comando input:focus, .nuevo-comando textarea:focus {
+      border-color: rgba(112, 0, 255, 0.4);
+    }
+    .btn-guardar-cmd {
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      border: none;
+      border-radius: 8px;
+      color: white;
+      padding: 8px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-family: 'Inter', sans-serif;
+    }
+
+    #btnPanel {
+      background: rgba(0, 212, 255, 0.08);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      color: var(--text);
+      transition: all 0.2s;
+    }
+    #btnPanel:hover { background: rgba(0, 212, 255, 0.15); }
+
+    #btnGTTS {
+      background: rgba(0, 255, 157, 0.08);
+      border: 1px solid rgba(0, 255, 157, 0.2);
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #btnGTTS.activo {
+      background: rgba(0, 255, 157, 0.15);
+      border-color: rgba(0, 255, 157, 0.4);
+    }
   </style>
 </head>
 <body>
@@ -508,11 +647,39 @@
         <div class="status-dot"></div>
         En línea
       </div>
-      <button id="btnVoz" onclick="toggleVoz()" title="Activar/desactivar voz">
-        🔇
-      </button>
+      <button id="btnGTTS" onclick="toggleGTTS()" title="Voz mejorada (gTTS)">🎙️</button>
+      <button id="btnVoz" onclick="toggleVoz()" title="Voz del navegador">🔇</button>
+      <button id="btnPanel" onclick="togglePanel()">☰ Menú</button>
     </div>
   </header>
+
+  <!-- PANEL LATERAL -->
+  <div id="panel">
+    <div class="panel-titulo">
+      Akuzfiro
+      <button class="panel-cerrar" onclick="togglePanel()">✕</button>
+    </div>
+
+    <div class="panel-seccion">
+      <div class="panel-seccion-titulo">Lo que sé de Gustavo</div>
+      <div id="listaHechos"><span style="color:var(--text-dim);font-size:0.8rem">Cargando...</span></div>
+    </div>
+
+    <div class="panel-seccion">
+      <div class="panel-seccion-titulo">Comandos personalizados</div>
+      <div id="listaComandos"></div>
+      <div class="nuevo-comando">
+        <input id="cmdNombre" placeholder='Nombre del comando (ej: "Modo estudio")' />
+        <textarea id="cmdAcciones" rows="2" placeholder='Qué hace (ej: "Pon música de concentración y dime cuánto tiempo llevas estudiando")'></textarea>
+        <button class="btn-guardar-cmd" onclick="guardarComando()">+ Guardar comando</button>
+      </div>
+    </div>
+
+    <div class="panel-seccion">
+      <div class="panel-seccion-titulo">Historial reciente</div>
+      <div id="listaHistorial"><span style="color:var(--text-dim);font-size:0.8rem">Cargando...</span></div>
+    </div>
+  </div>
 
   <div id="chat">
     <div class="bienvenida" id="bienvenida">
@@ -543,7 +710,123 @@
     const inputEl = document.getElementById('input');
     const btnEl = document.getElementById('btnEnviar');
     const btnVozEl = document.getElementById('btnVoz');
+    const btnGTTSEl = document.getElementById('btnGTTS');
     const bienvenida = document.getElementById('bienvenida');
+
+    // --- PANEL LATERAL ---
+    let panelAbierto = false;
+    function togglePanel() {
+      panelAbierto = !panelAbierto;
+      document.getElementById('panel').classList.toggle('abierto', panelAbierto);
+      if (panelAbierto) {
+        cargarPanel();
+      }
+    }
+
+    async function cargarPanel() {
+      // Hechos
+      try {
+        const res = await fetch('/memoria');
+        const data = await res.json();
+        const listaHechos = document.getElementById('listaHechos');
+        if (data.hechos && data.hechos.length > 0) {
+          listaHechos.innerHTML = data.hechos.map(h => `<div class="hecho-item">${h}</div>`).join('');
+        } else {
+          listaHechos.innerHTML = '<span style="color:var(--text-dim);font-size:0.8rem">Aún no hay hechos guardados</span>';
+        }
+        // Historial
+        const listaHistorial = document.getElementById('listaHistorial');
+        if (data.conversaciones && data.conversaciones.length > 0) {
+          const ultimas = data.conversaciones.slice(-5).reverse();
+          listaHistorial.innerHTML = ultimas.map(c => `
+            <div style="margin-bottom:10px;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;border-left:2px solid var(--border)">
+              <div style="font-size:0.75rem;color:var(--accent);margin-bottom:4px">Tú: ${c.usuario.substring(0,60)}${c.usuario.length>60?'...':''}</div>
+              <div style="font-size:0.75rem;color:var(--text-dim)">Akuzfiro: ${c.akuzfiro.substring(0,80)}${c.akuzfiro.length>80?'...':''}</div>
+            </div>`).join('');
+        } else {
+          listaHistorial.innerHTML = '<span style="color:var(--text-dim);font-size:0.8rem">Sin historial aún</span>';
+        }
+      } catch(e) {}
+      // Comandos
+      cargarComandos();
+    }
+
+    async function cargarComandos() {
+      try {
+        const res = await fetch('/comandos');
+        const cmds = await res.json();
+        const lista = document.getElementById('listaComandos');
+        if (cmds.length > 0) {
+          lista.innerHTML = cmds.map(c => `
+            <div class="comando-item" onclick="usarComando('${c.nombre}')">
+              <div>
+                <div class="comando-nombre">${c.nombre}</div>
+                <div style="font-size:0.75rem;color:var(--text-dim);margin-top:2px">${c.acciones.substring(0,60)}...</div>
+              </div>
+              <button class="comando-eliminar" onclick="event.stopPropagation();eliminarComando('${c.nombre}')">✕</button>
+            </div>`).join('');
+        } else {
+          lista.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:8px">Sin comandos aún</div>';
+        }
+      } catch(e) {}
+    }
+
+    async function guardarComando() {
+      const nombre = document.getElementById('cmdNombre').value.trim();
+      const acciones = document.getElementById('cmdAcciones').value.trim();
+      if (!nombre || !acciones) return;
+      await fetch('/comandos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, acciones })
+      });
+      document.getElementById('cmdNombre').value = '';
+      document.getElementById('cmdAcciones').value = '';
+      cargarComandos();
+    }
+
+    async function eliminarComando(nombre) {
+      await fetch(`/comandos/${encodeURIComponent(nombre)}`, { method: 'DELETE' });
+      cargarComandos();
+    }
+
+    function usarComando(nombre) {
+      inputEl.value = nombre;
+      togglePanel();
+      enviar();
+    }
+
+    // --- gTTS ---
+    let gttsActivo = false;
+    function toggleGTTS() {
+      gttsActivo = !gttsActivo;
+      btnGTTSEl.classList.toggle('activo', gttsActivo);
+      btnGTTSEl.title = gttsActivo ? 'Voz mejorada ON' : 'Voz mejorada OFF';
+      if (gttsActivo && vozActiva) {
+        vozActiva = false;
+        btnVozEl.textContent = '🔇';
+        btnVozEl.classList.remove('activo');
+        window.speechSynthesis.cancel();
+      }
+    }
+
+    async function hablarGTTS(texto) {
+      try {
+        const res = await fetch('/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texto })
+        });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.play();
+        audio.onended = () => URL.revokeObjectURL(url);
+      } catch(e) {
+        console.error('Error gTTS:', e);
+      }
+    }
 
     let vozActiva = false;
 
@@ -800,7 +1083,11 @@
 
         if (data.respuesta) {
           const textoFinal = agregarMensaje(data.respuesta, 'akuzfiro');
-          if (vozActiva) hablar(textoFinal || data.respuesta);
+          if (gttsActivo) {
+            hablarGTTS(textoFinal || data.respuesta);
+          } else if (vozActiva) {
+            hablar(textoFinal || data.respuesta);
+          }
         } else {
           agregarMensaje('Error: ' + (data.error || 'desconocido'), 'akuzfiro');
         }
