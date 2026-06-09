@@ -631,6 +631,21 @@
       background: rgba(0, 255, 157, 0.15);
       border-color: rgba(0, 255, 157, 0.4);
     }
+
+    #btnManoLibres {
+      background: rgba(0, 212, 255, 0.08);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #btnManoLibres.activo {
+      background: rgba(255, 200, 0, 0.15);
+      border-color: rgba(255, 200, 0, 0.5);
+      animation: pulseMic 1.5s infinite;
+    }
   </style>
 </head>
 <body>
@@ -649,6 +664,7 @@
       </div>
       <button id="btnGTTS" onclick="toggleGTTS()" title="Voz mejorada (gTTS)">🎙️</button>
       <button id="btnVoz" onclick="toggleVoz()" title="Voz del navegador">🔇</button>
+      <button id="btnManoLibres" onclick="toggleManoLibres()" title="Manos libres">👋</button>
       <button id="btnPanel" onclick="togglePanel()">☰ Menú</button>
     </div>
   </header>
@@ -863,7 +879,187 @@
       window.speechSynthesis.speak(utter);
     }
 
-    // --- MICROFONO ---
+    // --- MANOS LIBRES ---
+    let manoLibresActivo = false;
+    let reconocimientoContinuo = null;
+    let esperandoRespuesta = false;
+    const btnManoLibresEl = document.getElementById('btnManoLibres');
+
+    function toggleManoLibres() {
+      manoLibresActivo = !manoLibresActivo;
+      btnManoLibresEl.classList.toggle('activo', manoLibresActivo);
+      btnManoLibresEl.title = manoLibresActivo ? 'Manos libres ON — click para desactivar' : 'Manos libres';
+
+      if (manoLibresActivo) {
+        // Activar voz automáticamente
+        if (!vozActiva && !gttsActivo) {
+          vozActiva = true;
+          btnVozEl.textContent = '🔊';
+          btnVozEl.classList.add('activo');
+        }
+        iniciarEscuchaContinua();
+        agregarMensaje('Modo manos libres activado. Te escucho, Gustavo.', 'akuzfiro');
+        hablar('Modo manos libres activado. Te escucho.');
+      } else {
+        detenerEscuchaContinua();
+        agregarMensaje('Modo manos libres desactivado.', 'akuzfiro');
+      }
+    }
+
+    function iniciarEscuchaContinua() {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome.');
+        manoLibresActivo = false;
+        btnManoLibresEl.classList.remove('activo');
+        return;
+      }
+
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      reconocimientoContinuo = new SR();
+      reconocimientoContinuo.lang = 'es-MX';
+      reconocimientoContinuo.continuous = false;
+      reconocimientoContinuo.interimResults = false;
+      reconocimientoContinuo.maxAlternatives = 1;
+
+      reconocimientoContinuo.onresult = async (e) => {
+        if (esperandoRespuesta) return;
+        const texto = e.results[0][0].transcript.trim();
+        if (!texto) return;
+
+        // Comandos de control por voz
+        if (texto.toLowerCase().includes('detente') ||
+            texto.toLowerCase().includes('para') ||
+            texto.toLowerCase().includes('modo manos libres off')) {
+          toggleManoLibres();
+          return;
+        }
+
+        esperandoRespuesta = true;
+        inputEl.value = texto;
+        await enviarManoLibres(texto);
+      };
+
+      reconocimientoContinuo.onend = () => {
+        // Reiniciar automáticamente si sigue activo
+        if (manoLibresActivo && !esperandoRespuesta) {
+          setTimeout(() => {
+            if (manoLibresActivo && reconocimientoContinuo) {
+              try { reconocimientoContinuo.start(); } catch(e) {}
+            }
+          }, 300);
+        }
+      };
+
+      reconocimientoContinuo.onerror = (e) => {
+        if (e.error === 'no-speech' || e.error === 'audio-capture') {
+          // Reintentar silenciosamente
+          setTimeout(() => {
+            if (manoLibresActivo) {
+              try { reconocimientoContinuo.start(); } catch(e) {}
+            }
+          }, 500);
+        }
+      };
+
+      try { reconocimientoContinuo.start(); } catch(e) {}
+    }
+
+    function detenerEscuchaContinua() {
+      manoLibresActivo = false;
+      esperandoRespuesta = false;
+      if (reconocimientoContinuo) {
+        try { reconocimientoContinuo.stop(); } catch(e) {}
+        reconocimientoContinuo = null;
+      }
+      btnManoLibresEl.classList.remove('activo');
+    }
+
+    async function enviarManoLibres(mensaje) {
+      agregarMensaje(mensaje, 'usuario');
+      inputEl.value = '';
+      btnEl.disabled = true;
+      mostrarTyping();
+
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mensaje })
+        });
+        const data = await res.json();
+        quitarTyping();
+
+        if (data.respuesta) {
+          const textoFinal = agregarMensaje(data.respuesta, 'akuzfiro');
+
+          // Hablar y cuando termine, volver a escuchar
+          if (gttsActivo) {
+            await hablarGTTSYEsperar(textoFinal || data.respuesta);
+          } else {
+            await hablarYEsperar(textoFinal || data.respuesta);
+          }
+        }
+      } catch(e) {
+        quitarTyping();
+        agregarMensaje('Error de conexión.', 'akuzfiro');
+      }
+
+      btnEl.disabled = false;
+      esperandoRespuesta = false;
+
+      // Reiniciar escucha después de responder
+      if (manoLibresActivo) {
+        setTimeout(() => {
+          if (manoLibresActivo) {
+            try { reconocimientoContinuo.start(); } catch(e) {
+              iniciarEscuchaContinua();
+            }
+          }
+        }, 500);
+      }
+    }
+
+    function hablarYEsperar(texto) {
+      return new Promise((resolve) => {
+        window.speechSynthesis.cancel();
+        let textoLimpio = texto
+          .replace(/https?:\/\/\S+/g, '')
+          .replace(/\*\*|__|\*|_|`/g, '')
+          .replace(/\n+/g, ' ')
+          .trim();
+        if (!textoLimpio) { resolve(); return; }
+
+        const utter = new SpeechSynthesisUtterance(textoLimpio);
+        utter.lang = 'es-MX';
+        utter.rate = 1.0;
+        const voces = window.speechSynthesis.getVoices();
+        const vozEsp = voces.find(v => v.lang.startsWith('es')) || voces[0];
+        if (vozEsp) utter.voice = vozEsp;
+        utter.onend = resolve;
+        utter.onerror = resolve;
+        window.speechSynthesis.speak(utter);
+      });
+    }
+
+    async function hablarGTTSYEsperar(texto) {
+      return new Promise(async (resolve) => {
+        try {
+          const res = await fetch('/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texto })
+          });
+          if (!res.ok) { resolve(); return; }
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audio.playbackRate = 1.25;
+          audio.play();
+          audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+          audio.onerror = resolve;
+        } catch(e) { resolve(); }
+      });
+    }
     let reconocimiento = null;
     let micActivo = false;
     const btnMicEl = document.getElementById('btnMic');
