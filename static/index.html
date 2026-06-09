@@ -1035,12 +1035,15 @@
         const voces = window.speechSynthesis.getVoices();
         const vozEsp = voces.find(v => v.lang.startsWith('es')) || voces[0];
         if (vozEsp) utter.voice = vozEsp;
-        utter.onend = resolve;
-        utter.onerror = resolve;
+        utter.onend = () => { detenerBargeIn(); resolve(); };
+        utter.onerror = () => { detenerBargeIn(); resolve(); };
         window.speechSynthesis.speak(utter);
-
-        // Barge-in: escucha mientras habla, si detecta voz interrumpe
-        iniciarBargeIn(resolve);
+        window._resolveVoz = resolve;
+        // Esperar 1.5s para que empiece a sonar antes de escuchar
+        if (manoLibresActivo) setTimeout(() => iniciarBargeIn(() => {
+          window.speechSynthesis.cancel();
+          resolve();
+        }), 1500);
       });
     }
 
@@ -1055,48 +1058,74 @@
           if (!res.ok) { resolve(); return; }
           const blob = await res.blob();
           const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audio.playbackRate = 1.25;
-          audio.play();
-
-          // Barge-in para gTTS
-          iniciarBargeIn(() => {
-            audio.pause();
-            audio.currentTime = 0;
+          const audioEl = new Audio(url);
+          audioEl.playbackRate = 1.25;
+          audioEl.play();
+          window._audioActual = audioEl;
+          window._resolveVoz = resolve;
+          if (manoLibresActivo) setTimeout(() => iniciarBargeIn(() => {
+            audioEl.pause();
             URL.revokeObjectURL(url);
             resolve();
-          });
-
-          audio.onended = () => { 
-            detenerBargeIn();
-            URL.revokeObjectURL(url); 
-            resolve(); 
-          };
-          audio.onerror = resolve;
+          }), 1500);
+          audioEl.onended = () => { detenerBargeIn(); URL.revokeObjectURL(url); resolve(); };
+          audioEl.onerror = resolve;
         } catch(e) { resolve(); }
       });
     }
 
-    // --- BARGE-IN (interrumpir a Akuzfiro hablando) ---
-    let bargeInRec = null;
+    function interrumpirVoz() {
+      window.speechSynthesis.cancel();
+      if (window._audioActual) { window._audioActual.pause(); window._audioActual = null; }
+      if (window._resolveVoz) { window._resolveVoz(); window._resolveVoz = null; }
+      detenerBargeIn();
+    }
+
+    // --- BARGE-IN con AudioContext (detección de volumen) ---
+    let bargeInStream = null;
+    let bargeInContext = null;
+    let bargeInAnalyser = null;
+    let bargeInFrame = null;
 
     function iniciarBargeIn(onInterrupt) {
-      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return;
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      bargeInRec = new SR();
-      bargeInRec.lang = 'es-MX';
-      bargeInRec.continuous = false;
-      bargeInRec.interimResults = true;
+      detenerBargeIn();
+      navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+        .then(stream => {
+          bargeInStream = stream;
+          bargeInContext = new (window.AudioContext || window.webkitAudioContext)();
+          const source = bargeInContext.createMediaStreamSource(stream);
+          bargeInAnalyser = bargeInContext.createAnalyser();
+          bargeInAnalyser.fftSize = 512;
+          source.connect(bargeInAnalyser);
+          const buffer = new Uint8Array(bargeInAnalyser.frequencyBinCount);
+          let framesConVoz = 0;
 
-      bargeInRec.onresult = (e) => {
-        // Cualquier sonido detectado interrumpe
-        detenerBargeIn();
-        window.speechSynthesis.cancel();
-        onInterrupt();
-      };
+          function checkVolume() {
+            if (!bargeInAnalyser) return;
+            bargeInAnalyser.getByteFrequencyData(buffer);
+            const promedio = buffer.reduce((a, b) => a + b, 0) / buffer.length;
+            if (promedio > 18) { // Umbral: ajustado para voz humana
+              framesConVoz++;
+              if (framesConVoz >= 4) { // 4 frames consecutivos = voz real
+                detenerBargeIn();
+                onInterrupt();
+                return;
+              }
+            } else {
+              framesConVoz = 0;
+            }
+            bargeInFrame = requestAnimationFrame(checkVolume);
+          }
+          bargeInFrame = requestAnimationFrame(checkVolume);
+        })
+        .catch(() => {});
+    }
 
-      bargeInRec.onerror = () => {};
-      try { bargeInRec.start(); } catch(e) {}
+    function detenerBargeIn() {
+      if (bargeInFrame) { cancelAnimationFrame(bargeInFrame); bargeInFrame = null; }
+      if (bargeInAnalyser) { try { bargeInAnalyser.disconnect(); } catch(e) {} bargeInAnalyser = null; }
+      if (bargeInContext) { try { bargeInContext.close(); } catch(e) {} bargeInContext = null; }
+      if (bargeInStream) { bargeInStream.getTracks().forEach(t => t.stop()); bargeInStream = null; }
     }
 
     function detenerBargeIn() {
@@ -1110,6 +1139,11 @@
     const btnMicEl = document.getElementById('btnMic');
 
     function toggleMic() {
+      // Si está en manos libres y Akuzfiro está hablando, interrumpe
+      if (manoLibresActivo && (window._resolveVoz || window._audioActual)) {
+        interrumpirVoz();
+        return;
+      }
       if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
         alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome.');
         return;
