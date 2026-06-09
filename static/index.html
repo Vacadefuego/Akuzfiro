@@ -1104,11 +1104,22 @@
             if (!bargeInAnalyser) return;
             bargeInAnalyser.getByteFrequencyData(buffer);
             const promedio = buffer.reduce((a, b) => a + b, 0) / buffer.length;
-            if (promedio > 18) { // Umbral: ajustado para voz humana
+            if (promedio > 18) {
               framesConVoz++;
-              if (framesConVoz >= 4) { // 4 frames consecutivos = voz real
+              if (framesConVoz >= 4) {
                 detenerBargeIn();
                 onInterrupt();
+                // Reactivar escucha después de interrumpir
+                if (manoLibresActivo) {
+                  esperandoRespuesta = false;
+                  setTimeout(() => {
+                    if (manoLibresActivo) {
+                      try { reconocimientoContinuo.start(); } catch(e) {
+                        iniciarEscuchaContinua();
+                      }
+                    }
+                  }, 400);
+                }
                 return;
               }
             } else {
