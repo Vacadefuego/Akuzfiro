@@ -987,12 +987,14 @@
     }
 
     async function enviarManoLibres(mensaje) {
+      console.log('[ML] Estado: Procesando mensaje:', mensaje);
       agregarMensaje(mensaje, 'usuario');
       inputEl.value = '';
       btnEl.disabled = true;
       mostrarTyping();
 
       try {
+        console.log('[ML] Estado: Esperando respuesta del backend');
         const res = await fetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1003,19 +1005,22 @@
 
         if (data.respuesta) {
           const textoFinal = agregarMensaje(data.respuesta, 'akuzfiro');
+          console.log('[ML] Estado: Hablando respuesta');
           if (gttsActivo) {
             await hablarGTTSYEsperar(textoFinal || data.respuesta);
           } else if (vozActiva) {
             await hablarYEsperar(textoFinal || data.respuesta);
           }
+          console.log('[ML] Estado: Fin de habla');
         }
       } catch(e) {
         quitarTyping();
+        console.log('[ML] Error:', e);
         agregarMensaje('Error de conexión.', 'akuzfiro');
       } finally {
         btnEl.disabled = false;
         esperandoRespuesta = false;
-        // Siempre reiniciar escucha si sigue activo
+        console.log('[ML] Estado: Reanudando escucha');
         if (manoLibresActivo) {
           setTimeout(() => {
             if (manoLibresActivo) iniciarEscuchaContinua();
@@ -1027,7 +1032,6 @@
     function hablarYEsperar(texto) {
       return new Promise((resolve) => {
         window.speechSynthesis.cancel();
-        detenerBargeIn();
         let textoLimpio = texto
           .replace(/https?:\/\/\S+/g, '')
           .replace(/\*\*|__|\*|_|`/g, '')
@@ -1035,36 +1039,61 @@
           .trim();
         if (!textoLimpio) { resolve(); return; }
 
+        let resuelto = false;
+        const resolver = () => { if (!resuelto) { resuelto = true; resolve(); } };
+
         const utter = new SpeechSynthesisUtterance(textoLimpio);
         utter.lang = 'es-MX';
         utter.rate = 1.0;
         const voces = window.speechSynthesis.getVoices();
         const vozEsp = voces.find(v => v.lang.startsWith('es')) || voces[0];
         if (vozEsp) utter.voice = vozEsp;
-        utter.onend = resolve;
-        utter.onerror = resolve;
+        utter.onend = () => { console.log('[VOZ] fin de habla'); resolver(); };
+        utter.onerror = () => { console.log('[VOZ] error de habla'); resolver(); };
+
+        // Timeout de respaldo: duración estimada del texto + 2s extra
+        const duracionEstimada = (textoLimpio.length / 15) * 1000 + 2000;
+        const timeoutId = setTimeout(() => {
+          console.log('[VOZ] timeout de respaldo activado');
+          resolver();
+        }, duracionEstimada);
+
+        // Limpiar timeout si resuelve antes
+        const resolverConLimpieza = () => { clearTimeout(timeoutId); resolver(); };
+        utter.onend = () => { console.log('[VOZ] fin de habla (onend)'); resolverConLimpieza(); };
+
         window.speechSynthesis.speak(utter);
+        console.log('[VOZ] iniciando habla, duración estimada:', duracionEstimada + 'ms');
       });
     }
 
     async function hablarGTTSYEsperar(texto) {
       return new Promise(async (resolve) => {
-        detenerBargeIn();
+        let resuelto = false;
+        const resolver = () => { if (!resuelto) { resuelto = true; resolve(); } };
         try {
           const res = await fetch('/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ texto })
           });
-          if (!res.ok) { resolve(); return; }
+          if (!res.ok) { resolver(); return; }
           const blob = await res.blob();
           const url = URL.createObjectURL(blob);
           const audioEl = new Audio(url);
           audioEl.playbackRate = 1.25;
+
+          // Timeout de respaldo
+          const duracion = blob.size / 16000 * 1000 + 2000;
+          const timeoutId = setTimeout(() => {
+            console.log('[GTTS] timeout de respaldo');
+            resolver();
+          }, duracion);
+
+          audioEl.onended = () => { clearTimeout(timeoutId); URL.revokeObjectURL(url); console.log('[GTTS] fin de audio'); resolver(); };
+          audioEl.onerror = () => { clearTimeout(timeoutId); resolver(); };
           audioEl.play();
-          audioEl.onended = () => { URL.revokeObjectURL(url); resolve(); };
-          audioEl.onerror = resolve;
-        } catch(e) { resolve(); }
+        } catch(e) { resolver(); }
       });
     }
 
