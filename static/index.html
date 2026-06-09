@@ -1038,6 +1038,9 @@
         utter.onend = resolve;
         utter.onerror = resolve;
         window.speechSynthesis.speak(utter);
+
+        // Barge-in: escucha mientras habla, si detecta voz interrumpe
+        iniciarBargeIn(resolve);
       });
     }
 
@@ -1055,10 +1058,52 @@
           const audio = new Audio(url);
           audio.playbackRate = 1.25;
           audio.play();
-          audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+
+          // Barge-in para gTTS
+          iniciarBargeIn(() => {
+            audio.pause();
+            audio.currentTime = 0;
+            URL.revokeObjectURL(url);
+            resolve();
+          });
+
+          audio.onended = () => { 
+            detenerBargeIn();
+            URL.revokeObjectURL(url); 
+            resolve(); 
+          };
           audio.onerror = resolve;
         } catch(e) { resolve(); }
       });
+    }
+
+    // --- BARGE-IN (interrumpir a Akuzfiro hablando) ---
+    let bargeInRec = null;
+
+    function iniciarBargeIn(onInterrupt) {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return;
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      bargeInRec = new SR();
+      bargeInRec.lang = 'es-MX';
+      bargeInRec.continuous = false;
+      bargeInRec.interimResults = true;
+
+      bargeInRec.onresult = (e) => {
+        // Cualquier sonido detectado interrumpe
+        detenerBargeIn();
+        window.speechSynthesis.cancel();
+        onInterrupt();
+      };
+
+      bargeInRec.onerror = () => {};
+      try { bargeInRec.start(); } catch(e) {}
+    }
+
+    function detenerBargeIn() {
+      if (bargeInRec) {
+        try { bargeInRec.stop(); } catch(e) {}
+        bargeInRec = null;
+      }
     }
     let reconocimiento = null;
     let micActivo = false;
