@@ -898,7 +898,7 @@
           btnVozEl.classList.add('activo');
         }
         iniciarEscuchaContinua();
-        agregarMensaje('Modo manos libres activado. Te escucho, Gustavo.', 'akuzfiro');
+        agregarMensaje('Modo manos libres activado. Te escucho, Gustavo. Di "oye" o "espera" para interrumpirme.', 'akuzfiro');
         hablar('Modo manos libres activado. Te escucho.');
       } else {
         detenerEscuchaContinua();
@@ -907,6 +907,12 @@
     }
 
     function iniciarEscuchaContinua() {
+      // Limpiar reconocimiento anterior si existe
+      if (reconocimientoContinuo) {
+        try { reconocimientoContinuo.stop(); } catch(e) {}
+        reconocimientoContinuo = null;
+      }
+
       if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
         alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome.');
         manoLibresActivo = false;
@@ -923,13 +929,19 @@
 
       reconocimientoContinuo.onresult = async (e) => {
         if (esperandoRespuesta) return;
-        const texto = e.results[0][0].transcript.trim();
+        const texto = e.results[0][0].transcript.trim().toLowerCase();
         if (!texto) return;
 
-        // Comandos de control por voz
-        if (texto.toLowerCase().includes('detente') ||
-            texto.toLowerCase().includes('para') ||
-            texto.toLowerCase().includes('modo manos libres off')) {
+        // Palabras clave para interrumpir
+        const interrupciones = ['oye', 'espera', 'para', 'detente', 'un momento'];
+        if (interrupciones.some(p => texto.includes(p))) {
+          window.speechSynthesis.cancel();
+          esperandoRespuesta = false;
+          return;
+        }
+
+        // Comandos para desactivar
+        if (texto.includes('modo manos libres off') || texto.includes('desactiva manos libres')) {
           toggleManoLibres();
           return;
         }
@@ -991,37 +1003,31 @@
 
         if (data.respuesta) {
           const textoFinal = agregarMensaje(data.respuesta, 'akuzfiro');
-
-          // Hablar y cuando termine, volver a escuchar
           if (gttsActivo) {
             await hablarGTTSYEsperar(textoFinal || data.respuesta);
-          } else {
+          } else if (vozActiva) {
             await hablarYEsperar(textoFinal || data.respuesta);
           }
         }
       } catch(e) {
         quitarTyping();
         agregarMensaje('Error de conexión.', 'akuzfiro');
-      }
-
-      btnEl.disabled = false;
-      esperandoRespuesta = false;
-
-      // Reiniciar escucha después de responder
-      if (manoLibresActivo) {
-        setTimeout(() => {
-          if (manoLibresActivo) {
-            try { reconocimientoContinuo.start(); } catch(e) {
-              iniciarEscuchaContinua();
-            }
-          }
-        }, 500);
+      } finally {
+        btnEl.disabled = false;
+        esperandoRespuesta = false;
+        // Siempre reiniciar escucha si sigue activo
+        if (manoLibresActivo) {
+          setTimeout(() => {
+            if (manoLibresActivo) iniciarEscuchaContinua();
+          }, 600);
+        }
       }
     }
 
     function hablarYEsperar(texto) {
       return new Promise((resolve) => {
         window.speechSynthesis.cancel();
+        detenerBargeIn();
         let textoLimpio = texto
           .replace(/https?:\/\/\S+/g, '')
           .replace(/\*\*|__|\*|_|`/g, '')
@@ -1035,20 +1041,15 @@
         const voces = window.speechSynthesis.getVoices();
         const vozEsp = voces.find(v => v.lang.startsWith('es')) || voces[0];
         if (vozEsp) utter.voice = vozEsp;
-        utter.onend = () => { detenerBargeIn(); resolve(); };
-        utter.onerror = () => { detenerBargeIn(); resolve(); };
+        utter.onend = resolve;
+        utter.onerror = resolve;
         window.speechSynthesis.speak(utter);
-        window._resolveVoz = resolve;
-        // Esperar 1.5s para que empiece a sonar antes de escuchar
-        if (manoLibresActivo) setTimeout(() => iniciarBargeIn(() => {
-          window.speechSynthesis.cancel();
-          resolve();
-        }), 1500);
       });
     }
 
     async function hablarGTTSYEsperar(texto) {
       return new Promise(async (resolve) => {
+        detenerBargeIn();
         try {
           const res = await fetch('/tts', {
             method: 'POST',
@@ -1061,14 +1062,7 @@
           const audioEl = new Audio(url);
           audioEl.playbackRate = 1.25;
           audioEl.play();
-          window._audioActual = audioEl;
-          window._resolveVoz = resolve;
-          if (manoLibresActivo) setTimeout(() => iniciarBargeIn(() => {
-            audioEl.pause();
-            URL.revokeObjectURL(url);
-            resolve();
-          }), 1500);
-          audioEl.onended = () => { detenerBargeIn(); URL.revokeObjectURL(url); resolve(); };
+          audioEl.onended = () => { URL.revokeObjectURL(url); resolve(); };
           audioEl.onerror = resolve;
         } catch(e) { resolve(); }
       });
@@ -1076,68 +1070,10 @@
 
     function interrumpirVoz() {
       window.speechSynthesis.cancel();
-      if (window._audioActual) { window._audioActual.pause(); window._audioActual = null; }
-      if (window._resolveVoz) { window._resolveVoz(); window._resolveVoz = null; }
-      detenerBargeIn();
     }
 
-    // --- BARGE-IN con AudioContext (detección de volumen) ---
-    let bargeInStream = null;
-    let bargeInContext = null;
-    let bargeInAnalyser = null;
-    let bargeInFrame = null;
-
-    function iniciarBargeIn(onInterrupt) {
-      detenerBargeIn();
-      navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-        .then(stream => {
-          bargeInStream = stream;
-          bargeInContext = new (window.AudioContext || window.webkitAudioContext)();
-          const source = bargeInContext.createMediaStreamSource(stream);
-          bargeInAnalyser = bargeInContext.createAnalyser();
-          bargeInAnalyser.fftSize = 512;
-          source.connect(bargeInAnalyser);
-          const buffer = new Uint8Array(bargeInAnalyser.frequencyBinCount);
-          let framesConVoz = 0;
-
-          function checkVolume() {
-            if (!bargeInAnalyser) return;
-            bargeInAnalyser.getByteFrequencyData(buffer);
-            const promedio = buffer.reduce((a, b) => a + b, 0) / buffer.length;
-            if (promedio > 18) {
-              framesConVoz++;
-              if (framesConVoz >= 4) {
-                detenerBargeIn();
-                onInterrupt();
-                // Reactivar escucha después de interrumpir
-                if (manoLibresActivo) {
-                  esperandoRespuesta = false;
-                  setTimeout(() => {
-                    if (manoLibresActivo) {
-                      try { reconocimientoContinuo.start(); } catch(e) {
-                        iniciarEscuchaContinua();
-                      }
-                    }
-                  }, 400);
-                }
-                return;
-              }
-            } else {
-              framesConVoz = 0;
-            }
-            bargeInFrame = requestAnimationFrame(checkVolume);
-          }
-          bargeInFrame = requestAnimationFrame(checkVolume);
-        })
-        .catch(() => {});
-    }
-
-    function detenerBargeIn() {
-      if (bargeInFrame) { cancelAnimationFrame(bargeInFrame); bargeInFrame = null; }
-      if (bargeInAnalyser) { try { bargeInAnalyser.disconnect(); } catch(e) {} bargeInAnalyser = null; }
-      if (bargeInContext) { try { bargeInContext.close(); } catch(e) {} bargeInContext = null; }
-      if (bargeInStream) { bargeInStream.getTracks().forEach(t => t.stop()); bargeInStream = null; }
-    }
+    function iniciarBargeIn() {}
+    function detenerBargeIn() {}
 
     function detenerBargeIn() {
       if (bargeInRec) {
