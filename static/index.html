@@ -646,6 +646,37 @@
       border-color: rgba(255, 200, 0, 0.5);
       animation: pulseMic 1.5s infinite;
     }
+
+    /* BOTON FLOTANTE MANOS LIBRES */
+    #btnFlotante {
+      position: fixed;
+      bottom: 90px;
+      right: 20px;
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      border: none;
+      color: white;
+      font-size: 1.6rem;
+      cursor: pointer;
+      z-index: 999;
+      box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    #btnFlotante.visible { display: flex; }
+    #btnFlotante.escuchando {
+      background: linear-gradient(135deg, #ff4444, #ff8800);
+      box-shadow: 0 4px 20px rgba(255, 68, 68, 0.5);
+      animation: pulseMic 1s infinite;
+    }
+    #btnFlotante.hablando {
+      background: linear-gradient(135deg, #00ff9d, #00d4ff);
+      box-shadow: 0 4px 20px rgba(0, 255, 157, 0.4);
+    }
   </style>
 </head>
 <body>
@@ -669,9 +700,11 @@
     </div>
   </header>
 
+  <!-- BOTON FLOTANTE -->
+  <button id="btnFlotante" onclick="detenerTodo()" title="Detener manos libres">⏹️</button>
+
   <!-- PANEL LATERAL -->
-  <div id="panel">
-    <div class="panel-titulo">
+  <div id="panel">    <div class="panel-titulo">
       Akuzfiro
       <button class="panel-cerrar" onclick="togglePanel()">✕</button>
     </div>
@@ -898,7 +931,7 @@
           btnVozEl.classList.add('activo');
         }
         iniciarEscuchaContinua();
-        agregarMensaje('Modo manos libres activado. Te escucho, Gustavo. Di "oye" o "espera" para interrumpirme.', 'akuzfiro');
+        agregarMensaje('Modo manos libres activado. Te escucho. Di "stop" para desactivarme, "oye" para interrumpirme.', 'akuzfiro');
         hablar('Modo manos libres activado. Te escucho.');
       } else {
         detenerEscuchaContinua();
@@ -929,20 +962,23 @@
 
       reconocimientoContinuo.onresult = async (e) => {
         if (esperandoRespuesta) return;
-        const texto = e.results[0][0].transcript.trim().toLowerCase();
+        const texto = e.results[0][0].transcript.trim();
+        const textoLower = texto.toLowerCase();
+        console.log('[ML] Estado: Escuchando —', texto);
         if (!texto) return;
 
-        // Palabras clave para interrumpir
-        const interrupciones = ['oye', 'espera', 'para', 'detente', 'un momento'];
-        if (interrupciones.some(p => texto.includes(p))) {
-          window.speechSynthesis.cancel();
-          esperandoRespuesta = false;
+        // Comandos de control — palabras clave para detener
+        const comandosStop = ['stop', 'para ya', 'modo off', 'apágate', 'apegate', 'salir'];
+        if (comandosStop.some(p => textoLower.includes(p))) {
+          toggleManoLibres();
           return;
         }
 
-        // Comandos para desactivar
-        if (texto.includes('modo manos libres off') || texto.includes('desactiva manos libres')) {
-          toggleManoLibres();
+        // Palabras para interrumpir la voz actual
+        const interrupciones = ['oye', 'espera', 'un momento', 'hey'];
+        if (interrupciones.some(p => textoLower.includes(p))) {
+          window.speechSynthesis.cancel();
+          esperandoRespuesta = false;
           return;
         }
 
