@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Akuzfiro</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#00d4ff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Akuzfiro">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Inter:wght@300;400;500&display=swap');
 
@@ -1212,6 +1217,13 @@
 
     // Cargar voces (necesario en algunos navegadores)
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+
+    // Registrar Service Worker para PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(() => console.log('[PWA] Service Worker registrado'))
+        .catch(e => console.log('[PWA] Error:', e));
+    }
 
     inputEl.addEventListener('input', function() {
       this.style.height = 'auto';

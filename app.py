@@ -474,6 +474,41 @@ def favicon():
     """Evita el error 404 del favicon."""
     return "", 204
 
+@app.route("/icon-192.png")
+@app.route("/icon-512.png")
+def icon():
+    """Genera ícono SVG convertido a PNG para la PWA."""
+    size = 512 if "512" in request.path else 192
+    # Generar PNG simple con reportlab
+    buf = io.BytesIO()
+    from reportlab.graphics import renderPM
+    from reportlab.graphics.shapes import Drawing, Circle, String
+    from reportlab.lib import colors as rl_colors
+
+    d = Drawing(size, size)
+    # Fondo
+    bg = Circle(size//2, size//2, size//2)
+    bg.fillColor = rl_colors.HexColor("#050508")
+    bg.strokeColor = None
+    d.add(bg)
+    # Círculo acento
+    ring = Circle(size//2, size//2, size//2 - size//10)
+    ring.fillColor = None
+    ring.strokeColor = rl_colors.HexColor("#00d4ff")
+    ring.strokeWidth = size//20
+    d.add(ring)
+    # Letra A
+    font_size = size // 2
+    txt = String(size//2, size//4, "A",
+                 fontSize=font_size,
+                 fillColor=rl_colors.HexColor("#00d4ff"),
+                 textAnchor="middle")
+    d.add(txt)
+
+    renderPM.drawToFile(d, buf, fmt="PNG")
+    buf.seek(0)
+    return send_file(buf, mimetype="image/png")
+
 
 @app.route("/comandos", methods=["GET"])
 def ver_comandos():
