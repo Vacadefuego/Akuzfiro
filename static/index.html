@@ -1081,7 +1081,7 @@
         if (!textoLimpio) { resolve(); return; }
 
         let resuelto = false;
-        const resolver = () => { if (!resuelto) { resuelto = true; resolve(); } };
+        const resolver = () => { if (!resuelto) { resuelto = true; detenerDeteccionVoz(); resolve(); } };
 
         const utter = new SpeechSynthesisUtterance(textoLimpio);
         utter.lang = 'es-MX';
@@ -1089,29 +1089,33 @@
         const voces = window.speechSynthesis.getVoices();
         const vozEsp = voces.find(v => v.lang.startsWith('es')) || voces[0];
         if (vozEsp) utter.voice = vozEsp;
-        utter.onend = () => { console.log('[VOZ] fin de habla'); resolver(); };
-        utter.onerror = () => { console.log('[VOZ] error de habla'); resolver(); };
+        utter.onend = () => { console.log('[VOZ] fin onend'); resolver(); };
+        utter.onerror = () => { console.log('[VOZ] error'); resolver(); };
 
-        // Timeout de respaldo: duración estimada del texto + 2s extra
-        const duracionEstimada = (textoLimpio.length / 15) * 1000 + 2000;
-        const timeoutId = setTimeout(() => {
-          console.log('[VOZ] timeout de respaldo activado');
-          resolver();
-        }, duracionEstimada);
-
-        // Limpiar timeout si resuelve antes
-        const resolverConLimpieza = () => { clearTimeout(timeoutId); resolver(); };
-        utter.onend = () => { console.log('[VOZ] fin de habla (onend)'); resolverConLimpieza(); };
+        const duracion = (textoLimpio.length / 15) * 1000 + 2500;
+        const tid = setTimeout(() => { console.log('[VOZ] timeout respaldo'); resolver(); }, duracion);
+        const resolverFinal = () => { clearTimeout(tid); resolver(); };
+        utter.onend = () => resolverFinal();
 
         window.speechSynthesis.speak(utter);
-        console.log('[VOZ] iniciando habla, duración estimada:', duracionEstimada + 'ms');
+
+        // Detectar voz del usuario después de 1s para evitar eco inicial
+        if (manoLibresActivo) {
+          setTimeout(() => {
+            if (!resuelto) iniciarDeteccionVoz(() => {
+              console.log('[VOZ] voz detectada, interrumpiendo');
+              window.speechSynthesis.cancel();
+              resolverFinal();
+            });
+          }, 1000);
+        }
       });
     }
 
     async function hablarGTTSYEsperar(texto) {
       return new Promise(async (resolve) => {
         let resuelto = false;
-        const resolver = () => { if (!resuelto) { resuelto = true; resolve(); } };
+        const resolver = () => { if (!resuelto) { resuelto = true; detenerDeteccionVoz(); resolve(); } };
         try {
           const res = await fetch('/tts', {
             method: 'POST',
@@ -1124,22 +1128,84 @@
           const audioEl = new Audio(url);
           audioEl.playbackRate = 1.25;
 
-          // Timeout de respaldo
-          const duracion = blob.size / 16000 * 1000 + 2000;
-          const timeoutId = setTimeout(() => {
-            console.log('[GTTS] timeout de respaldo');
-            resolver();
-          }, duracion);
-
-          audioEl.onended = () => { clearTimeout(timeoutId); URL.revokeObjectURL(url); console.log('[GTTS] fin de audio'); resolver(); };
-          audioEl.onerror = () => { clearTimeout(timeoutId); resolver(); };
+          const duracion = blob.size / 8000 * 1000 + 2000;
+          const tid = setTimeout(() => resolver(), duracion);
+          audioEl.onended = () => { clearTimeout(tid); URL.revokeObjectURL(url); resolver(); };
+          audioEl.onerror = () => { clearTimeout(tid); resolver(); };
           audioEl.play();
+
+          if (manoLibresActivo) {
+            setTimeout(() => {
+              if (!resuelto) iniciarDeteccionVoz(() => {
+                audioEl.pause();
+                URL.revokeObjectURL(url);
+                resolver();
+              });
+            }, 1000);
+          }
         } catch(e) { resolver(); }
       });
     }
 
+    // --- DETECCION DE VOZ POR VOLUMEN (AudioContext) ---
+    let vozStream = null;
+    let vozContext = null;
+    let vozAnalyser = null;
+    let vozFrame = null;
+    let vozCallback = null;
+
+    function iniciarDeteccionVoz(onVozDetectada) {
+      detenerDeteccionVoz();
+      vozCallback = onVozDetectada;
+      navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+        .then(stream => {
+          vozStream = stream;
+          vozContext = new (window.AudioContext || window.webkitAudioContext)();
+          const source = vozContext.createMediaStreamSource(stream);
+          vozAnalyser = vozContext.createAnalyser();
+          vozAnalyser.fftSize = 256;
+          source.connect(vozAnalyser);
+          const buf = new Uint8Array(vozAnalyser.frequencyBinCount);
+          let frames = 0;
+
+          function loop() {
+            if (!vozAnalyser) return;
+            vozAnalyser.getByteFrequencyData(buf);
+            // Solo frecuencias de voz humana (300-3000 Hz)
+            const inicio = Math.floor(300 / (vozContext.sampleRate / vozAnalyser.fftSize));
+            const fin = Math.floor(3000 / (vozContext.sampleRate / vozAnalyser.fftSize));
+            let suma = 0;
+            for (let i = inicio; i < fin && i < buf.length; i++) suma += buf[i];
+            const promedio = suma / (fin - inicio);
+
+            if (promedio > 25) {
+              frames++;
+              if (frames >= 3) {
+                detenerDeteccionVoz();
+                if (vozCallback) vozCallback();
+                return;
+              }
+            } else {
+              frames = 0;
+            }
+            vozFrame = requestAnimationFrame(loop);
+          }
+          vozFrame = requestAnimationFrame(loop);
+        })
+        .catch(() => {});
+    }
+
+    function detenerDeteccionVoz() {
+      vozCallback = null;
+      if (vozFrame) { cancelAnimationFrame(vozFrame); vozFrame = null; }
+      if (vozAnalyser) { try { vozAnalyser.disconnect(); } catch(e) {} vozAnalyser = null; }
+      if (vozContext) { try { vozContext.close(); } catch(e) {} vozContext = null; }
+      if (vozStream) { vozStream.getTracks().forEach(t => t.stop()); vozStream = null; }
+    }
+
     function interrumpirVoz() {
       window.speechSynthesis.cancel();
+      detenerDeteccionVoz();
     }
 
     function iniciarBargeIn() {}
