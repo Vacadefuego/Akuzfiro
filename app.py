@@ -279,7 +279,65 @@ Hechos importantes:"""
         print(f"Error extrayendo hechos: {e}")
 
 
-# --- BUSQUEDA WEB ---
+def obtener_clima():
+    """Obtiene el clima actual de Xalapa usando Open-Meteo (gratis, sin API key)."""
+    try:
+        url = "https://api.open-meteo.com/v1/forecast?latitude=19.5438&longitude=-96.9102&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=America%2FMexico_City&forecast_days=1"
+        with httpx.Client(timeout=5) as http:
+            r = http.get(url)
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            current = data.get("current", {})
+            temp = current.get("temperature_2m")
+            humidity = current.get("relative_humidity_2m")
+            wind = current.get("wind_speed_10m")
+            code = current.get("weather_code", 0)
+
+            # Traducir código de clima
+            if code == 0: desc = "despejado"
+            elif code in [1, 2, 3]: desc = "parcialmente nublado"
+            elif code in [45, 48]: desc = "neblina"
+            elif code in [51, 53, 55]: desc = "llovizna"
+            elif code in [61, 63, 65]: desc = "lluvia"
+            elif code in [71, 73, 75]: desc = "nieve"
+            elif code in [80, 81, 82]: desc = "chubascos"
+            elif code in [95, 96, 99]: desc = "tormenta eléctrica"
+            else: desc = "condiciones variables"
+
+            return f"{desc}, {temp}°C, humedad {humidity}%, viento {wind} km/h"
+    except Exception:
+        return None
+# --- CLIMA ---
+def obtener_clima():
+    """Obtiene el clima actual de Xalapa, Veracruz via Open-Meteo (gratis, sin API key)."""
+    try:
+        url = "https://api.open-meteo.com/v1/forecast?latitude=19.5438&longitude=-96.9102&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=America%2FMexico_City&forecast_days=1"
+        with httpx.Client(timeout=5) as http:
+            r = http.get(url)
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            current = data.get("current", {})
+            temp = current.get("temperature_2m")
+            humedad = current.get("relative_humidity_2m")
+            viento = current.get("wind_speed_10m")
+            codigo = current.get("weather_code", 0)
+            descripciones = {
+                0: "despejado", 1: "mayormente despejado", 2: "parcialmente nublado",
+                3: "nublado", 45: "neblina", 48: "neblina con escarcha",
+                51: "llovizna ligera", 53: "llovizna", 55: "llovizna intensa",
+                61: "lluvia ligera", 63: "lluvia", 65: "lluvia intensa",
+                71: "nieve ligera", 73: "nieve", 75: "nieve intensa",
+                80: "chubascos ligeros", 81: "chubascos", 82: "chubascos intensos",
+                95: "tormenta", 96: "tormenta con granizo", 99: "tormenta fuerte"
+            }
+            desc = descripciones.get(codigo, "variable")
+            return f"Clima en Xalapa ahora: {temp}°C, {desc}, humedad {humedad}%, viento {viento} km/h"
+    except Exception:
+        return None
+
+
 def buscar_web(query, max_resultados=4):
     try:
         with DDGS() as ddgs:
@@ -353,6 +411,12 @@ def chat():
 
     tz_mexico = pytz.timezone("America/Mexico_City")
     ahora = datetime.now(tz_mexico).strftime("%A %d de %B de %Y, %H:%M hrs")
+
+    # Obtener clima de Xalapa
+    clima = obtener_clima()
+    info_contexto = f"FECHA Y HORA: {ahora} (Xalapa, Veracruz, México)"
+    if clima:
+        info_contexto += f"\nCLIMA ACTUAL EN XALAPA: {clima}"
     hechos = cargar_hechos()
     conversaciones = cargar_conversaciones(10)
 
@@ -366,7 +430,7 @@ def chat():
         comandos = []
 
     system_prompt = PERSONALIDAD
-    system_prompt += f"\n\nFECHA Y HORA ACTUAL: {ahora} (hora del servidor)"
+    system_prompt += f"\n\n{info_contexto}"
 
     if hechos:
         system_prompt += "\n\nLo que sé de Gustavo:\n"
