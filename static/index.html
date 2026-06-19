@@ -1024,7 +1024,7 @@
       reconocimientoContinuo.lang = 'es-MX';
       reconocimientoContinuo.continuous = false;
       reconocimientoContinuo.interimResults = false;
-      reconocimientoContinuo.maxAlternatives = 1;
+      reconocimientoContinuo.maxAlternatives = 3; // Más alternativas = más chances de reconocer
 
       reconocimientoContinuo.onresult = async (e) => {
         if (esperandoRespuesta) return;
@@ -1168,6 +1168,8 @@
               console.log('[VAD] Interrupción confirmada — cancelando TTS');
               window.speechSynthesis.cancel();
               resolverFinal();
+              // Reactivar escucha después de que SR de confirmación se cierre
+              setTimeout(() => { if (manoLibresActivo) iniciarEscuchaContinua(); }, 600);
             });
           }, 1500);
         }
@@ -1203,6 +1205,8 @@
                 audioEl.pause();
                 URL.revokeObjectURL(url);
                 resolver();
+                // Reactivar escucha después de que SR de confirmación se cierre
+                setTimeout(() => { if (manoLibresActivo) iniciarEscuchaContinua(); }, 600);
               });
             }, 1500);
           }
@@ -1239,7 +1243,11 @@
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          // Maximizar sensibilidad para uso a distancia
+          channelCount: 1,
+          sampleRate: 16000,
+          sampleSize: 16
         },
         video: false
       });
@@ -1283,8 +1291,8 @@
             for (let i = inicio; i < fin && i < buf.length; i++) suma += buf[i];
             const energia = suma / (fin - inicio);
 
-            // Umbral ligeramente más alto para tolerar ruido residual
-            if (energia > 32) {
+            // Umbral más bajo para detectar voz lejana (tablero/copiloto)
+            if (energia > 18) {
               framesVoz++;
               if (framesVoz >= 4 && !esperandoConfirmacion) {
                 esperandoConfirmacion = true;
@@ -1451,19 +1459,32 @@
         alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome.');
         return;
       }
-      if (micActivo) {
+      // Si hay un reconocimiento colgado o activo, limpiarlo primero y empezar de nuevo
+      if (micActivo || reconocimiento) {
+        // Si ya estaba activo de verdad, detener. Si era un estado sucio, limpiar e iniciar.
+        const estabaActivo = micActivo;
         detenerMic();
-      } else {
-        iniciarMic();
+        if (estabaActivo) return; // El usuario quiso detener
+        // Si era estado sucio, iniciamos inmediatamente
       }
+      iniciarMic();
     }
 
     function iniciarMic() {
+      // Limpiar cualquier instancia previa
+      if (reconocimiento) {
+        try { reconocimiento.abort(); } catch(e) {}
+        reconocimiento = null;
+      }
+      micActivo = false;
+
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       reconocimiento = new SR();
       reconocimiento.lang = 'es-MX';
       reconocimiento.interimResults = false;
-      reconocimiento.maxAlternatives = 1;
+      reconocimiento.maxAlternatives = 3; // Más alternativas para mejor reconocimiento a distancia
+
+      let resultadoRecibido = false;
 
       reconocimiento.onstart = () => {
         micActivo = true;
@@ -1473,6 +1494,7 @@
       };
 
       reconocimiento.onresult = (e) => {
+        resultadoRecibido = true;
         const texto = e.results[0][0].transcript;
         inputEl.value = texto;
         detenerMic();
@@ -1485,10 +1507,16 @@
       };
 
       reconocimiento.onend = () => {
+        // Solo limpiar estado, no enviar de nuevo si ya se procesó el resultado
         detenerMic();
       };
 
-      reconocimiento.start();
+      try {
+        reconocimiento.start();
+      } catch(e) {
+        console.error('No se pudo iniciar micrófono:', e);
+        detenerMic();
+      }
     }
 
     function detenerMic() {
