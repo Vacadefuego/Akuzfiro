@@ -1,4 +1,4 @@
-const CACHE_NAME = 'akuzfiro-v1';
+const CACHE_NAME = 'akuzfiro-v2';
 const ASSETS = [
   '/',
   '/manifest.json'
@@ -21,15 +21,10 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Solo cachea assets estáticos, las llamadas al API van siempre a la red
-  if (e.request.url.includes('/chat') ||
-      e.request.url.includes('/tts') ||
-      e.request.url.includes('/memoria') ||
-      e.request.url.includes('/generar-')) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
+  // Todo va a la red primero — sin cache agresivo
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    fetch(e.request).catch(() =>
+      caches.match(e.request)
+    )
   );
 });
