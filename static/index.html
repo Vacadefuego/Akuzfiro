@@ -997,7 +997,7 @@
           btnVozEl.classList.add('activo');
         }
         iniciarEscuchaContinua();
-        agregarMensaje('Modo manos libres activado. Te escucho. Di "stop" para desactivarme, "oye" para interrumpirme.', 'akuzfiro');
+        agregarMensaje('Modo manos libres activado. Te escucho. Di "stop" para desactivarme, "espera" o "akuzfiro" mientras hablo para interrumpirme.', 'akuzfiro');
         hablar('Modo manos libres activado. Te escucho.');
       } else {
         detenerEscuchaContinua();
@@ -1160,15 +1160,16 @@
 
         window.speechSynthesis.speak(utter);
 
-        // Detectar voz del usuario después de 1s para evitar eco inicial
+        // Activar VAD después de 1.5s: el echo canceller del navegador
+        // necesita tiempo para aprender y suprimir el audio del TTS
         if (manoLibresActivo) {
           setTimeout(() => {
             if (!resuelto) iniciarDeteccionVoz(() => {
-              console.log('[VOZ] voz detectada, interrumpiendo');
+              console.log('[VAD] Interrupción confirmada — cancelando TTS');
               window.speechSynthesis.cancel();
               resolverFinal();
             });
-          }, 1000);
+          }, 1500);
         }
       });
     }
@@ -1198,62 +1199,221 @@
           if (manoLibresActivo) {
             setTimeout(() => {
               if (!resuelto) iniciarDeteccionVoz(() => {
+                console.log('[VAD] Interrupción confirmada — cancelando gTTS');
                 audioEl.pause();
                 URL.revokeObjectURL(url);
                 resolver();
               });
-            }, 1000);
+            }, 1500);
           }
         } catch(e) { resolver(); }
       });
     }
 
-    // --- DETECCION DE VOZ POR VOLUMEN (AudioContext) ---
+    // ============================================================
+    // VAD HÍBRIDO: echoCancellation + energía + palabra de interrupción
+    // Arquitectura: navegador filtra el eco del TTS antes de llegar
+    // al análisis de energía, eliminando auto-interrupciones falsas.
+    // Si VAD detecta energía → escucha corta (1.5s) para confirmar
+    // una palabra de interrupción antes de cancelar el TTS.
+    // ============================================================
     let vozStream = null;
     let vozContext = null;
     let vozAnalyser = null;
     let vozFrame = null;
     let vozCallback = null;
 
+    // Palabras que confirman que el usuario quiere interrumpir
+    const PALABRAS_INTERRUPCION = [
+      'akuzfiro', 'espera', 'alto', 'detente', 'detén', 'para',
+      'oye', 'hey', 'un momento', 'stop'
+    ];
+
+    /**
+     * Solicita micrófono con echo cancellation activado.
+     * Esto hace que el navegador suprima el audio del TTS antes
+     * de que llegue al analizador, evitando falsas detecciones.
+     */
+    function pedirMicConEcho() {
+      return navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: false
+      });
+    }
+
+    /**
+     * Inicia la detección de voz durante la reproducción del TTS.
+     * Flujo:
+     *   1. Abre micrófono con echo cancellation
+     *   2. Analiza energía en frecuencias de voz humana (300-3400 Hz)
+     *   3. Si detecta energía sostenida (>=4 frames), lanza escucha
+     *      rápida de SpeechRecognition por 1.5s
+     *   4. Solo cancela el TTS si se reconoce una palabra de interrupción
+     */
     function iniciarDeteccionVoz(onVozDetectada) {
       detenerDeteccionVoz();
       vozCallback = onVozDetectada;
-      navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+
+      pedirMicConEcho()
         .then(stream => {
           vozStream = stream;
           vozContext = new (window.AudioContext || window.webkitAudioContext)();
           const source = vozContext.createMediaStreamSource(stream);
           vozAnalyser = vozContext.createAnalyser();
-          vozAnalyser.fftSize = 256;
+          vozAnalyser.fftSize = 512;
           source.connect(vozAnalyser);
+
           const buf = new Uint8Array(vozAnalyser.frequencyBinCount);
-          let frames = 0;
+          let framesVoz = 0;
+          let esperandoConfirmacion = false;
 
           function loop() {
             if (!vozAnalyser) return;
             vozAnalyser.getByteFrequencyData(buf);
-            // Solo frecuencias de voz humana (300-3000 Hz)
-            const inicio = Math.floor(300 / (vozContext.sampleRate / vozAnalyser.fftSize));
-            const fin = Math.floor(3000 / (vozContext.sampleRate / vozAnalyser.fftSize));
+
+            // Rango de voz humana: 300 Hz – 3400 Hz
+            const binHz = vozContext.sampleRate / vozAnalyser.fftSize;
+            const inicio = Math.floor(300 / binHz);
+            const fin    = Math.floor(3400 / binHz);
             let suma = 0;
             for (let i = inicio; i < fin && i < buf.length; i++) suma += buf[i];
-            const promedio = suma / (fin - inicio);
+            const energia = suma / (fin - inicio);
 
-            if (promedio > 25) {
-              frames++;
-              if (frames >= 3) {
-                detenerDeteccionVoz();
-                if (vozCallback) vozCallback();
-                return;
+            // Umbral ligeramente más alto para tolerar ruido residual
+            if (energia > 32) {
+              framesVoz++;
+              if (framesVoz >= 4 && !esperandoConfirmacion) {
+                esperandoConfirmacion = true;
+                // Lanzar escucha corta para confirmar palabra de interrupción
+                confirmarInterrupcion(() => {
+                  // Confirmado: el usuario quiere interrumpir
+                  detenerDeteccionVoz();
+                  if (vozCallback) vozCallback();
+                }, () => {
+                  // No confirmado: reiniciar contador y seguir escuchando
+                  framesVoz = 0;
+                  esperandoConfirmacion = false;
+                  if (vozFrame !== null) vozFrame = requestAnimationFrame(loop);
+                });
+                return; // Pausa el loop mientras SpeechRecognition escucha
               }
             } else {
-              frames = 0;
+              framesVoz = Math.max(0, framesVoz - 1); // decaimiento suave
             }
+
             vozFrame = requestAnimationFrame(loop);
           }
+
           vozFrame = requestAnimationFrame(loop);
         })
-        .catch(() => {});
+        .catch(() => {
+          // Fallback sin echo cancellation si el navegador lo rechaza
+          navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+            .then(stream => {
+              vozStream = stream;
+              // Re-invocar con el stream básico (sin confirmación de palabra)
+              vozContext = new (window.AudioContext || window.webkitAudioContext)();
+              const source = vozContext.createMediaStreamSource(stream);
+              vozAnalyser = vozContext.createAnalyser();
+              vozAnalyser.fftSize = 256;
+              source.connect(vozAnalyser);
+              const buf = new Uint8Array(vozAnalyser.frequencyBinCount);
+              let frames = 0;
+              function loopFallback() {
+                if (!vozAnalyser) return;
+                vozAnalyser.getByteFrequencyData(buf);
+                const inicio = Math.floor(300 / (vozContext.sampleRate / vozAnalyser.fftSize));
+                const fin    = Math.floor(3000 / (vozContext.sampleRate / vozAnalyser.fftSize));
+                let suma = 0;
+                for (let i = inicio; i < fin && i < buf.length; i++) suma += buf[i];
+                const promedio = suma / (fin - inicio);
+                if (promedio > 25) {
+                  frames++;
+                  if (frames >= 3) {
+                    detenerDeteccionVoz();
+                    if (vozCallback) vozCallback();
+                    return;
+                  }
+                } else { frames = 0; }
+                vozFrame = requestAnimationFrame(loopFallback);
+              }
+              vozFrame = requestAnimationFrame(loopFallback);
+            })
+            .catch(() => {});
+        });
+    }
+
+    /**
+     * Escucha durante ~1.5 segundos para verificar si el usuario dijo
+     * una palabra de interrupción.  
+     * - onConfirmado: se llama si se detectó la palabra  
+     * - onNoConfirmado: se llama si no hubo coincidencia o timeout
+     */
+    function confirmarInterrupcion(onConfirmado, onNoConfirmado) {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        // Sin SR disponible: confirmar directo (comportamiento antiguo)
+        onConfirmado();
+        return;
+      }
+
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const rec = new SR();
+      rec.lang = 'es-MX';
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.maxAlternatives = 3;
+
+      let terminado = false;
+
+      const timeout = setTimeout(() => {
+        if (!terminado) {
+          terminado = true;
+          try { rec.stop(); } catch(e) {}
+          onNoConfirmado();
+        }
+      }, 1800); // 1.8 segundos máximo de espera
+
+      rec.onresult = (e) => {
+        if (terminado) return;
+        clearTimeout(timeout);
+        terminado = true;
+
+        // Revisar todas las alternativas reconocidas
+        let textoReconocido = '';
+        for (let i = 0; i < e.results[0].length; i++) {
+          textoReconocido += ' ' + e.results[0][i].transcript.toLowerCase();
+        }
+        console.log('[VAD] Confirmación escuchada:', textoReconocido.trim());
+
+        const esInterrupcion = PALABRAS_INTERRUPCION.some(p => textoReconocido.includes(p));
+        if (esInterrupcion) {
+          onConfirmado();
+        } else {
+          onNoConfirmado();
+        }
+      };
+
+      rec.onerror = () => {
+        if (!terminado) {
+          clearTimeout(timeout);
+          terminado = true;
+          onNoConfirmado();
+        }
+      };
+
+      rec.onend = () => {
+        if (!terminado) {
+          clearTimeout(timeout);
+          terminado = true;
+          onNoConfirmado();
+        }
+      };
+
+      try { rec.start(); } catch(e) { onNoConfirmado(); }
     }
 
     function detenerDeteccionVoz() {
@@ -1270,10 +1430,9 @@
     }
 
     function iniciarBargeIn() {}
-    function detenerBargeIn() {}
 
     function detenerBargeIn() {
-      if (bargeInRec) {
+      if (typeof bargeInRec !== 'undefined' && bargeInRec) {
         try { bargeInRec.stop(); } catch(e) {}
         bargeInRec = null;
       }
