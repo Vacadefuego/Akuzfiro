@@ -637,6 +637,20 @@
       border-color: rgba(0, 255, 157, 0.4);
     }
 
+    #btnTraductor {
+      background: rgba(0, 212, 255, 0.08);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #btnTraductor.activo {
+      background: rgba(0, 212, 255, 0.15);
+      border-color: rgba(0, 212, 255, 0.4);
+    }
+
     #btnManoLibres {
       background: rgba(0, 212, 255, 0.08);
       border: 1px solid rgba(0, 212, 255, 0.2);
@@ -701,12 +715,53 @@
       <button id="btnGTTS" onclick="toggleGTTS()" title="Voz mejorada (gTTS)">🎙️</button>
       <button id="btnVoz" onclick="toggleVoz()" title="Voz del navegador">🔇</button>
       <button id="btnManoLibres" onclick="toggleManoLibres()" title="Manos libres">👋</button>
+      <button id="btnTraductor" onclick="toggleTraductor()" title="Modo intérprete">🌐</button>
       <button id="btnPanel" onclick="togglePanel()">☰ Menú</button>
     </div>
   </header>
 
   <!-- BOTON FLOTANTE -->
   <button id="btnFlotante" onclick="detenerTodo()" title="Detener manos libres">⏹️</button>
+
+  <!-- PANEL TRADUCTOR -->
+  <div id="panelTraductor" style="display:none;position:fixed;top:60px;left:0;right:0;bottom:0;background:rgba(5,5,8,0.97);z-index:200;flex-direction:column;align-items:center;justify-content:center;gap:20px;">
+    <div style="font-family:'Rajdhani',sans-serif;font-size:1.2rem;letter-spacing:3px;color:var(--accent)">MODO INTÉRPRETE</div>
+    <div style="display:flex;gap:12px;align-items:center">
+      <select id="idiomaA" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-size:0.9rem">
+        <option value="es-MX">🇲🇽 Español</option>
+        <option value="en-US">🇺🇸 English</option>
+        <option value="fr-FR">🇫🇷 Français</option>
+        <option value="de-DE">🇩🇪 Deutsch</option>
+        <option value="it-IT">🇮🇹 Italiano</option>
+        <option value="pt-BR">🇧🇷 Português</option>
+        <option value="ja-JP">🇯🇵 日本語</option>
+        <option value="zh-CN">🇨🇳 中文</option>
+        <option value="ar-SA">🇸🇦 العربية</option>
+      </select>
+      <span style="color:var(--accent);font-size:1.2rem">⇄</span>
+      <select id="idiomaB" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-size:0.9rem">
+        <option value="en-US">🇺🇸 English</option>
+        <option value="es-MX">🇲🇽 Español</option>
+        <option value="fr-FR">🇫🇷 Français</option>
+        <option value="de-DE">🇩🇪 Deutsch</option>
+        <option value="it-IT">🇮🇹 Italiano</option>
+        <option value="pt-BR">🇧🇷 Português</option>
+        <option value="ja-JP">🇯🇵 日本語</option>
+        <option value="zh-CN">🇨🇳 中文</option>
+        <option value="ar-SA">🇸🇦 العربية</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:16px">
+      <button onclick="hablarYTraducir('A')" id="btnHablaA" style="background:linear-gradient(135deg,var(--accent2),var(--accent));border:none;border-radius:50%;width:80px;height:80px;font-size:1.8rem;cursor:pointer;color:white">🎤</button>
+      <button onclick="hablarYTraducir('B')" id="btnHablaB" style="background:linear-gradient(135deg,#ff6b00,#ff0080);border:none;border-radius:50%;width:80px;height:80px;font-size:1.8rem;cursor:pointer;color:white">🎤</button>
+    </div>
+    <div style="display:flex;gap:16px;font-size:0.75rem;color:var(--text-dim);text-align:center">
+      <div style="width:80px">Tú hablas</div>
+      <div style="width:80px">Ellos hablan</div>
+    </div>
+    <div id="textoTraductor" style="max-width:500px;text-align:center;padding:16px;background:var(--surface2);border-radius:12px;border:1px solid var(--border);min-height:60px;color:var(--text);font-size:0.95rem"></div>
+    <button onclick="toggleTraductor()" style="background:none;border:1px solid var(--border);color:var(--text-dim);padding:8px 20px;border-radius:8px;cursor:pointer;font-size:0.85rem">✕ Cerrar</button>
+  </div>
 
   <!-- PANEL LATERAL -->
   <div id="panel">    <div class="panel-titulo">
@@ -1284,7 +1339,87 @@
     // Cargar voces (necesario en algunos navegadores)
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 
-    // Registrar Service Worker para PWA
+    // --- MODO TRADUCTOR ---
+    let traductorActivo = false;
+
+    function toggleTraductor() {
+      traductorActivo = !traductorActivo;
+      const panel = document.getElementById('panelTraductor');
+      panel.style.display = traductorActivo ? 'flex' : 'none';
+    }
+
+    function hablarYTraducir(quien) {
+      const idiomaOrigen = quien === 'A'
+        ? document.getElementById('idiomaA').value
+        : document.getElementById('idiomaB').value;
+      const idiomaDestino = quien === 'A'
+        ? document.getElementById('idiomaB').value
+        : document.getElementById('idiomaA').value;
+
+      const btnId = quien === 'A' ? 'btnHablaA' : 'btnHablaB';
+      const btn = document.getElementById(btnId);
+      const textoEl = document.getElementById('textoTraductor');
+
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        textoEl.textContent = 'Tu navegador no soporta reconocimiento de voz. Usa Chrome.';
+        return;
+      }
+
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const rec = new SR();
+      rec.lang = idiomaOrigen;
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+
+      btn.textContent = '⏺️';
+      btn.style.animation = 'pulseMic 1s infinite';
+      textoEl.textContent = 'Escuchando...';
+
+      rec.onresult = async (e) => {
+        const textoOriginal = e.results[0][0].transcript;
+        btn.textContent = '🎤';
+        btn.style.animation = '';
+        textoEl.textContent = `"${textoOriginal}" → traduciendo...`;
+
+        // Pedir traducción a Akuzfiro
+        const nombreIdioma = {
+          'es-MX': 'español', 'en-US': 'inglés', 'fr-FR': 'francés',
+          'de-DE': 'alemán', 'it-IT': 'italiano', 'pt-BR': 'portugués',
+          'ja-JP': 'japonés', 'zh-CN': 'chino mandarín', 'ar-SA': 'árabe'
+        };
+        const destNombre = nombreIdioma[idiomaDestino] || idiomaDestino;
+        const mensaje = `Traduce exactamente al ${destNombre}, sin explicaciones ni notas, solo la traducción: "${textoOriginal}"`;
+
+        try {
+          const res = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mensaje })
+          });
+          const data = await res.json();
+          if (data.respuesta) {
+            const traduccion = data.respuesta.trim();
+            textoEl.innerHTML = `<span style="color:var(--text-dim)">${textoOriginal}</span><br><span style="color:var(--accent);font-size:1.1rem">${traduccion}</span>`;
+
+            // Hablar la traducción en el idioma destino
+            window.speechSynthesis.cancel();
+            const utter = new SpeechSynthesisUtterance(traduccion);
+            utter.lang = idiomaDestino;
+            window.speechSynthesis.speak(utter);
+          }
+        } catch(e) {
+          textoEl.textContent = 'Error de conexión';
+        }
+      };
+
+      rec.onerror = () => {
+        btn.textContent = '🎤';
+        btn.style.animation = '';
+        textoEl.textContent = 'Error al escuchar. Intenta de nuevo.';
+      };
+
+      rec.start();
+    }
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js')
         .then(() => console.log('[PWA] Service Worker registrado'))
