@@ -715,7 +715,6 @@
       <button id="btnGTTS" onclick="toggleGTTS()" title="Voz mejorada (gTTS)">🎙️</button>
       <button id="btnVoz" onclick="toggleVoz()" title="Voz del navegador">🔇</button>
       <button id="btnManoLibres" onclick="toggleManoLibres()" title="Manos libres">👋</button>
-      <button id="btnTraductor" onclick="toggleTraductor()" title="Modo intérprete">🌐</button>
       <button id="btnPanel" onclick="togglePanel()">☰ Menú</button>
     </div>
   </header>
@@ -767,6 +766,13 @@
   <div id="panel">    <div class="panel-titulo">
       Akuzfiro
       <button class="panel-cerrar" onclick="togglePanel()">✕</button>
+    </div>
+
+    <div class="panel-seccion">
+      <div class="panel-seccion-titulo">Herramientas</div>
+      <button onclick="toggleTraductor()" style="width:100%;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:8px;color:var(--text);padding:10px;cursor:pointer;font-size:0.85rem;text-align:left;margin-bottom:6px">
+        🌐 Modo intérprete (traductor en vivo)
+      </button>
     </div>
 
     <div class="panel-seccion">
