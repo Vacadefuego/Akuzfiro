@@ -696,6 +696,119 @@
       background: linear-gradient(135deg, #00ff9d, #00d4ff);
       box-shadow: 0 4px 20px rgba(0, 255, 157, 0.4);
     }
+
+    /* TOAST DE RECORDATORIO */
+    .toast-recordatorio {
+      position: fixed;
+      top: 72px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(112,0,255,0.15));
+      border: 1px solid rgba(0, 212, 255, 0.5);
+      border-radius: 14px;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 9999;
+      max-width: 360px;
+      width: calc(100% - 48px);
+      backdrop-filter: blur(20px);
+      box-shadow: 0 8px 32px rgba(0, 212, 255, 0.2);
+      animation: toastEntrar 0.4s ease forwards;
+    }
+    @keyframes toastEntrar {
+      from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+      to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    .toast-recordatorio.saliendo {
+      animation: toastSalir 0.4s ease forwards;
+    }
+    @keyframes toastSalir {
+      from { opacity: 1; transform: translateX(-50%) translateY(0); }
+      to   { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+    }
+    .toast-icono {
+      font-size: 1.6rem;
+      animation: timbre 0.6s ease infinite alternate;
+    }
+    @keyframes timbre {
+      from { transform: rotate(-15deg); }
+      to   { transform: rotate(15deg); }
+    }
+    .toast-contenido { flex: 1; }
+    .toast-titulo {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 0.75rem;
+      letter-spacing: 2px;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .toast-mensaje {
+      font-size: 0.9rem;
+      color: #e8f4ff;
+      line-height: 1.4;
+    }
+    .toast-cerrar {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 1.1rem;
+      padding: 2px 6px;
+      border-radius: 6px;
+      transition: color 0.2s;
+    }
+    .toast-cerrar:hover { color: var(--accent); }
+
+    /* ITEM RECORDATORIO en el panel */
+    .rec-item {
+      font-size: 0.82rem;
+      color: var(--text);
+      padding: 10px 12px;
+      background: rgba(0, 212, 255, 0.06);
+      border-radius: 8px;
+      margin-bottom: 6px;
+      border-left: 2px solid var(--accent);
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .rec-item-info { flex: 1; }
+    .rec-item-hora {
+      font-size: 0.7rem;
+      color: var(--accent);
+      font-weight: 600;
+      letter-spacing: 1px;
+      margin-bottom: 2px;
+    }
+    .rec-item-msg { color: var(--text); }
+    .rec-item-del {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 0.8rem;
+      padding: 2px 5px;
+      border-radius: 4px;
+      margin-top: 2px;
+    }
+    .rec-item-del:hover { color: #ff6b6b; }
+    .rec-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent);
+      color: #000;
+      font-size: 0.6rem;
+      font-weight: 700;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
   </style>
 </head>
 <body>
@@ -776,6 +889,18 @@
     </div>
 
     <div class="panel-seccion">
+      <div class="panel-seccion-titulo">⏰ Recordatorios <span id="recBadge" style="display:none" class="rec-badge">0</span></div>
+      <div id="listaRecordatorios"><span style="color:var(--text-dim);font-size:0.8rem">Cargando...</span></div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <input id="recMensaje" placeholder='Ej: "Tomar agua"' style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.82rem;padding:8px;font-family:'Inter',sans-serif;outline:none" />
+        <input id="recHora" type="datetime-local" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.75rem;padding:6px;font-family:'Inter',sans-serif;outline:none" />
+      </div>
+      <button onclick="agregarRecordatorioManual()" style="width:100%;margin-top:6px;background:linear-gradient(135deg,rgba(0,212,255,0.15),rgba(112,0,255,0.15));border:1px solid rgba(0,212,255,0.3);border-radius:8px;color:var(--accent);padding:8px;cursor:pointer;font-size:0.82rem;font-family:'Inter',sans-serif">
+        + Agregar recordatorio
+      </button>
+    </div>
+
+    <div class="panel-seccion">
       <div class="panel-seccion-titulo">Lo que sé de Gustavo</div>
       <div id="listaHechos"><span style="color:var(--text-dim);font-size:0.8rem">Cargando...</span></div>
     </div>
@@ -839,6 +964,8 @@
     }
 
     async function cargarPanel() {
+      // Recordatorios
+      cargarRecordatorios();
       // Hechos
       try {
         const res = await fetch('/memoria');
@@ -966,7 +1093,7 @@
 
       const utter = new SpeechSynthesisUtterance(textoLimpio);
       utter.lang = 'es-MX';
-      utter.rate = 1.0;
+      utter.rate = 1.4;
       utter.pitch = 1.0;
       utter.volume = 1.0;
 
@@ -1146,7 +1273,7 @@
 
         const utter = new SpeechSynthesisUtterance(textoLimpio);
         utter.lang = 'es-MX';
-        utter.rate = 1.0;
+        utter.rate = 1.25;
         const voces = window.speechSynthesis.getVoices();
         const vozEsp = voces.find(v => v.lang.startsWith('es')) || voces[0];
         if (vozEsp) utter.voice = vozEsp;
@@ -1613,6 +1740,196 @@
 
       rec.start();
     }
+    // ============================================================
+    // SISTEMA DE RECORDATORIOS
+    // ============================================================
+
+    // Pedir permiso de notificaciones al cargar
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    // --- TOAST visual (siempre funciona, con o sin permiso de notificación) ---
+    function mostrarToastRecordatorio(id, mensaje) {
+      // Quitar toast anterior si existe
+      const anterior = document.querySelector('.toast-recordatorio');
+      if (anterior) anterior.remove();
+
+      const toast = document.createElement('div');
+      toast.className = 'toast-recordatorio';
+      toast.innerHTML = `
+        <div class="toast-icono">🔔</div>
+        <div class="toast-contenido">
+          <div class="toast-titulo">Recordatorio</div>
+          <div class="toast-mensaje">${mensaje}</div>
+        </div>
+        <button class="toast-cerrar" onclick="cerrarToast(this, ${id})">✕</button>
+      `;
+      document.body.appendChild(toast);
+
+      // Hablar el recordatorio si la voz está activa
+      const textoVoz = 'Recordatorio: ' + mensaje;
+      if (gttsActivo) {
+        hablarGTTS(textoVoz);
+      } else if (vozActiva) {
+        hablar(textoVoz);
+      }
+
+      // Notificación del sistema (si hay permiso)
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('⏰ Akuzfiro', {
+          body: mensaje,
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
+          tag: 'rec-' + id,
+          requireInteraction: true
+        });
+      }
+
+      // Auto-cerrar después de 15s
+      setTimeout(() => {
+        if (toast.isConnected) {
+          toast.classList.add('saliendo');
+          setTimeout(() => toast.remove(), 400);
+          marcarRecordatorioCompletado(id);
+        }
+      }, 15000);
+    }
+
+    function cerrarToast(btn, id) {
+      const toast = btn.closest('.toast-recordatorio');
+      if (toast) {
+        toast.classList.add('saliendo');
+        setTimeout(() => toast.remove(), 400);
+      }
+      marcarRecordatorioCompletado(id);
+    }
+
+    async function marcarRecordatorioCompletado(id) {
+      try {
+        await fetch(`/recordatorios/${id}/completar`, { method: 'POST' });
+        cargarRecordatorios(); // Refrescar lista en panel
+      } catch(e) {}
+    }
+
+    // --- IDs ya notificados (evitar repetir en la ventana de 5 min) ---
+    const recordatoriosNotificados = new Set();
+
+    // --- POLLING: revisar recordatorios pendientes cada 30 segundos ---
+    async function verificarRecordatorios() {
+      try {
+        const res = await fetch('/recordatorios/pendientes');
+        if (!res.ok) return;
+        const pendientes = await res.json();
+        if (!Array.isArray(pendientes)) return;
+        for (const rec of pendientes) {
+          if (!recordatoriosNotificados.has(rec.id)) {
+            recordatoriosNotificados.add(rec.id);
+            mostrarToastRecordatorio(rec.id, rec.mensaje);
+          }
+        }
+      } catch(e) {}
+    }
+
+    // Iniciar polling cuando la página carga
+    verificarRecordatorios();
+    setInterval(verificarRecordatorios, 30000);
+
+    // --- CARGAR lista de recordatorios en el panel ---
+    async function cargarRecordatorios() {
+      try {
+        const res = await fetch('/recordatorios');
+        if (!res.ok) return;
+        const recs = await res.json();
+        const lista = document.getElementById('listaRecordatorios');
+        const badge = document.getElementById('recBadge');
+
+        if (!recs || recs.length === 0) {
+          lista.innerHTML = '<span style="color:var(--text-dim);font-size:0.8rem">Sin recordatorios activos</span>';
+          badge.style.display = 'none';
+          return;
+        }
+
+        badge.style.display = 'inline-flex';
+        badge.textContent = recs.length;
+
+        lista.innerHTML = recs.map(r => {
+          const fecha = new Date(r.hora_aviso.replace(' ', 'T') + ':00');
+          const horaStr = fecha.toLocaleString('es-MX', {
+            weekday: 'short', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+          });
+          return `
+            <div class="rec-item">
+              <div class="rec-item-info">
+                <div class="rec-item-hora">📅 ${horaStr}</div>
+                <div class="rec-item-msg">${r.mensaje}</div>
+              </div>
+              <button class="rec-item-del" onclick="eliminarRecordatorio(${r.id})" title="Eliminar">✕</button>
+            </div>`;
+        }).join('');
+      } catch(e) {
+        document.getElementById('listaRecordatorios').innerHTML =
+          '<span style="color:var(--text-dim);font-size:0.8rem">Error cargando</span>';
+      }
+    }
+
+    async function eliminarRecordatorio(id) {
+      await marcarRecordatorioCompletado(id);
+    }
+
+    // --- AGREGAR recordatorio desde el panel manualmente ---
+    async function agregarRecordatorioManual() {
+      const mensaje = document.getElementById('recMensaje').value.trim();
+      const horaRaw = document.getElementById('recHora').value;
+      if (!mensaje || !horaRaw) {
+        alert('Escribe el mensaje y selecciona la hora.');
+        return;
+      }
+      // datetime-local da "YYYY-MM-DDTHH:MM", backend espera "YYYY-MM-DD HH:MM:SS"
+      const hora_aviso = horaRaw.replace('T', ' ') + ':00';
+      try {
+        const res = await fetch('/recordatorios', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mensaje, hora_aviso })
+        });
+        if (res.ok) {
+          document.getElementById('recMensaje').value = '';
+          document.getElementById('recHora').value = '';
+          cargarRecordatorios();
+        }
+      } catch(e) {}
+    }
+
+    // --- PARSEAR recordatorio desde frase natural (llamado cuando Akuzfiro responde) ---
+    async function procesarRecordatorioFrase(frase) {
+      try {
+        const res = await fetch('/recordatorios/parsear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ frase })
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.hora_aviso && data.mensaje) {
+          await fetch('/recordatorios', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mensaje: data.mensaje, hora_aviso: data.hora_aviso })
+          });
+          cargarRecordatorios();
+          console.log('[REC] Guardado:', data.mensaje, '@', data.hora_aviso);
+        }
+      } catch(e) {
+        console.error('[REC] Error parseando:', e);
+      }
+    }
+
+    // ============================================================
+    // FIN SISTEMA DE RECORDATORIOS
+    // ============================================================
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js')
         .then(() => console.log('[PWA] Service Worker registrado'))
@@ -1636,6 +1953,7 @@
       const regexPDF = /\[ARCHIVO_PDF\]([\s\S]*?)\[\/ARCHIVO_PDF\]/;
       const regexWord = /\[ARCHIVO_WORD\]([\s\S]*?)\[\/ARCHIVO_WORD\]/;
       const regexPPTX = /\[ARCHIVO_PPTX\]([\s\S]*?)\[\/ARCHIVO_PPTX\]/;
+      const regexRec  = /\[RECORDATORIO\]([\s\S]*?)\[\/RECORDATORIO\]/;
 
       let textoLimpio = texto;
       let archivoData = null;
@@ -1645,6 +1963,7 @@
       const matchPDF = texto.match(regexPDF);
       const matchWord = texto.match(regexWord);
       const matchPPTX = texto.match(regexPPTX);
+      const matchRec  = texto.match(regexRec);
 
       if (matchExcel) {
         try { archivoData = JSON.parse(matchExcel[1]); tipoArchivo = 'excel'; textoLimpio = texto.replace(regexExcel, '').trim(); } catch(e) {}
@@ -1654,6 +1973,18 @@
         try { archivoData = JSON.parse(matchWord[1]); tipoArchivo = 'word'; textoLimpio = texto.replace(regexWord, '').trim(); } catch(e) {}
       } else if (matchPPTX) {
         try { archivoData = JSON.parse(matchPPTX[1]); tipoArchivo = 'pptx'; textoLimpio = texto.replace(regexPPTX, '').trim(); } catch(e) {}
+      }
+
+      // Procesar recordatorio si existe (independiente de archivos)
+      if (matchRec) {
+        textoLimpio = textoLimpio.replace(regexRec, '').trim();
+        try {
+          const recData = JSON.parse(matchRec[1]);
+          if (recData.frase) {
+            // Parsear y guardar de forma asíncrona
+            procesarRecordatorioFrase(recData.frase);
+          }
+        } catch(e) {}
       }
 
       return { textoLimpio, archivoData, tipoArchivo };

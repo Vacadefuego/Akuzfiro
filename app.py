@@ -95,6 +95,13 @@ ARCHIVOS — puedes generar Excel, PDF, Word y PowerPoint reales:
 [ARCHIVO_PDF]{"titulo":"","contenido":"","secciones":[]}[/ARCHIVO_PDF]
 [ARCHIVO_WORD]{"titulo":"","contenido":"","secciones":[]}[/ARCHIVO_WORD]
 [ARCHIVO_PPTX]{"titulo":"","diapositivas":[{"titulo":"","puntos":[]}]}[/ARCHIVO_PPTX]
+
+RECORDATORIOS — cuando Gustavo diga algo como "avísame a las X", "recuérdame que...", "ponme un recordatorio para...", "en X minutos avísame":
+1. Responde normal confirmando el recordatorio (ej: "Listo, te aviso a las 3pm.")
+2. Al final incluye este bloque exacto:
+[RECORDATORIO]{"frase":"<la frase completa del usuario>"}[/RECORDATORIO]
+3. Solo incluye el bloque, el frontend hace el resto automáticamente
+4. Si Gustavo pregunta "¿qué recordatorios tengo?", dile que los puede ver en el menú ☰ → Recordatorios
 """
 
 
@@ -136,6 +143,33 @@ def init_db():
             nombre TEXT UNIQUE NOT NULL,
             acciones TEXT NOT NULL,
             fecha TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    conn.run("""
+        CREATE TABLE IF NOT EXISTS gastos (
+            id SERIAL PRIMARY KEY,
+            fecha TIMESTAMP DEFAULT NOW(),
+            descripcion TEXT NOT NULL,
+            monto NUMERIC(10,2) NOT NULL,
+            categoria TEXT DEFAULT 'general'
+        )
+    """)
+    conn.run("""
+        CREATE TABLE IF NOT EXISTS recordatorios (
+            id SERIAL PRIMARY KEY,
+            creado TIMESTAMP DEFAULT NOW(),
+            hora_aviso TIMESTAMP NOT NULL,
+            mensaje TEXT NOT NULL,
+            completado BOOLEAN DEFAULT FALSE
+        )
+    """)
+    conn.run("""
+        CREATE TABLE IF NOT EXISTS gastos (
+            id SERIAL PRIMARY KEY,
+            fecha TIMESTAMP DEFAULT NOW(),
+            descripcion TEXT NOT NULL,
+            monto NUMERIC(10,2) NOT NULL,
+            categoria TEXT DEFAULT 'general'
         )
     """)
     conn.close()
@@ -576,6 +610,166 @@ def eliminar_comando(nombre):
         conn.run("DELETE FROM comandos WHERE nombre = :n", n=nombre)
         conn.close()
         return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/gastos", methods=["GET"])
+def ver_gastos():
+    try:
+        conn = get_conn()
+        rows = conn.run("""
+            SELECT id, fecha, descripcion, monto, categoria
+            FROM gastos ORDER BY fecha DESC LIMIT 100
+        """)
+        conn.close()
+        total = sum(float(r[3]) for r in rows)
+        gastos = [{"id": r[0], "fecha": str(r[1])[:16], "descripcion": r[2],
+                   "monto": float(r[3]), "categoria": r[4]} for r in rows]
+        return jsonify({"gastos": gastos, "total": total})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/gastos", methods=["POST"])
+def agregar_gasto():
+    try:
+        data = request.json
+        descripcion = data.get("descripcion", "").strip()
+        monto = float(data.get("monto", 0))
+        categoria = data.get("categoria", "general").strip()
+        if not descripcion or monto <= 0:
+            return jsonify({"error": "Datos inválidos"}), 400
+        conn = get_conn()
+        conn.run(
+            "INSERT INTO gastos (descripcion, monto, categoria) VALUES (:d, :m, :c)",
+            d=descripcion, m=monto, c=categoria
+        )
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/gastos/<int:gasto_id>", methods=["DELETE"])
+def eliminar_gasto(gasto_id):
+    try:
+        conn = get_conn()
+        conn.run("DELETE FROM gastos WHERE id = :id", id=gasto_id)
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/recordatorios", methods=["GET"])
+def ver_recordatorios():
+    try:
+        tz_mexico = pytz.timezone("America/Mexico_City")
+        conn = get_conn()
+        rows = conn.run("""
+            SELECT id, hora_aviso, mensaje, completado
+            FROM recordatorios WHERE completado = FALSE
+            ORDER BY hora_aviso ASC
+        """)
+        conn.close()
+        return jsonify([{
+            "id": r[0],
+            "hora_aviso": str(r[1])[:16],
+            "mensaje": r[2],
+            "completado": r[3]
+        } for r in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/recordatorios", methods=["POST"])
+def agregar_recordatorio():
+    try:
+        data = request.json
+        mensaje = data.get("mensaje", "").strip()
+        hora_aviso = data.get("hora_aviso", "")
+        if not mensaje or not hora_aviso:
+            return jsonify({"error": "Faltan datos"}), 400
+        conn = get_conn()
+        conn.run(
+            "INSERT INTO recordatorios (hora_aviso, mensaje) VALUES (:h, :m)",
+            h=hora_aviso, m=mensaje
+        )
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/recordatorios/<int:rec_id>/completar", methods=["POST"])
+def completar_recordatorio(rec_id):
+    try:
+        conn = get_conn()
+        conn.run("UPDATE recordatorios SET completado = TRUE WHERE id = :id", id=rec_id)
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/recordatorios/pendientes", methods=["GET"])
+def recordatorios_pendientes():
+    """Verifica si hay recordatorios que deben sonar ahora (ventana de 5 minutos)."""
+    try:
+        from datetime import timedelta
+        tz_mexico = pytz.timezone("America/Mexico_City")
+        ahora = datetime.now(tz_mexico)
+        hace5min = ahora - timedelta(minutes=5)
+        conn = get_conn()
+        rows = conn.run("""
+            SELECT id, mensaje FROM recordatorios
+            WHERE completado = FALSE
+            AND hora_aviso <= :ahora
+            AND hora_aviso >= :hace5min
+        """, ahora=ahora, hace5min=hace5min)
+        conn.close()
+        return jsonify([{"id": r[0], "mensaje": r[1]} for r in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/recordatorios/parsear", methods=["POST"])
+def parsear_recordatorio():
+    """
+    Recibe una frase natural (ej: 'avísame a las 3pm que tengo reunión')
+    y devuelve hora_aviso en formato ISO y el mensaje extraído.
+    """
+    try:
+        from datetime import timedelta
+        data = request.json
+        frase = data.get("frase", "").strip()
+        if not frase:
+            return jsonify({"error": "Frase vacía"}), 400
+
+        tz_mexico = pytz.timezone("America/Mexico_City")
+        ahora = datetime.now(tz_mexico)
+
+        prompt = f"""Extrae la hora y el mensaje de este recordatorio. La fecha/hora actual es: {ahora.strftime('%Y-%m-%d %H:%M')} (Xalapa, México, hora del centro).
+
+Frase: "{frase}"
+
+Responde SOLO con JSON válido en este formato exacto, sin explicaciones:
+{{"hora_aviso": "YYYY-MM-DD HH:MM:SS", "mensaje": "texto del recordatorio"}}
+
+Reglas:
+- Si dice "en X minutos", suma esos minutos al tiempo actual
+- Si dice "a las 3pm" o "a las 15:00", usa esa hora de HOY (si ya pasó, usa mañana)
+- Si dice "mañana a las...", usa la fecha de mañana
+- Si no especifica AM/PM y la hora es < 8, asume PM
+- El mensaje debe ser corto y claro, sin la parte de "avísame" o "recuérdame"
+- Solo JSON, nada más"""
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=100
+        )
+        resultado = response.choices[0].message.content.strip()
+        # Limpiar si viene con backticks
+        resultado = resultado.replace("```json", "").replace("```", "").strip()
+        parsed = json.loads(resultado)
+        return jsonify(parsed)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
