@@ -763,6 +763,42 @@
     .toast-cerrar:hover { color: var(--accent); }
 
     /* ITEM RECORDATORIO en el panel */
+    .gasto-item {
+      font-size: 0.82rem;
+      color: var(--text);
+      padding: 8px 10px;
+      background: rgba(0,255,157,0.04);
+      border-radius: 8px;
+      margin-bottom: 5px;
+      border-left: 2px solid var(--accent3);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .gasto-info { flex: 1; }
+    .gasto-desc { color: var(--text); font-size: 0.82rem; }
+    .gasto-meta { font-size: 0.68rem; color: var(--text-dim); margin-top: 1px; }
+    .gasto-monto {
+      color: var(--accent3);
+      font-weight: 700;
+      font-size: 0.88rem;
+      white-space: nowrap;
+    }
+    .gasto-del {
+      background: none; border: none; color: var(--text-dim);
+      cursor: pointer; font-size: 0.75rem; padding: 2px 4px; border-radius: 4px;
+    }
+    .gasto-del:hover { color: #ff6b6b; }
+    .gastos-resumen {
+      display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;
+    }
+    .gastos-cat-pill {
+      font-size: 0.68rem; padding: 3px 8px;
+      background: rgba(0,255,157,0.08);
+      border: 1px solid rgba(0,255,157,0.2);
+      border-radius: 20px; color: var(--accent3);
+      white-space: nowrap;
+    }
     .rec-item {
       font-size: 0.82rem;
       color: var(--text);
@@ -886,6 +922,30 @@
       <button onclick="toggleTraductor()" style="width:100%;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:8px;color:var(--text);padding:10px;cursor:pointer;font-size:0.85rem;text-align:left;margin-bottom:6px">
         🌐 Modo intérprete (traductor en vivo)
       </button>
+      <button onclick="pedirNoticias()" id="btnNoticias" style="width:100%;background:rgba(0,255,157,0.08);border:1px solid rgba(0,255,157,0.2);border-radius:8px;color:var(--text);padding:10px;cursor:pointer;font-size:0.85rem;text-align:left">
+        📰 Noticias del día
+      </button>
+    </div>
+
+    <div class="panel-seccion">
+      <div class="panel-seccion-titulo">💸 Gastos del mes <span id="gastoTotal" style="float:right;color:var(--accent3);font-size:0.8rem;font-weight:600"></span></div>
+      <div id="listaGastos"><span style="color:var(--text-dim);font-size:0.8rem">Cargando...</span></div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <input id="gastoDesc" placeholder='Ej: "Gasolina"' style="flex:2;min-width:80px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.82rem;padding:8px;font-family:'Inter',sans-serif;outline:none" />
+        <input id="gastoMonto" type="number" placeholder="$" step="0.01" min="0" style="flex:1;min-width:60px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.82rem;padding:8px;font-family:'Inter',sans-serif;outline:none" />
+        <select id="gastoCat" style="flex:1;min-width:80px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.78rem;padding:6px;font-family:'Inter',sans-serif;outline:none">
+          <option value="general">General</option>
+          <option value="comida">Comida</option>
+          <option value="transporte">Transporte</option>
+          <option value="salud">Salud</option>
+          <option value="entretenimiento">Ocio</option>
+          <option value="ropa">Ropa</option>
+          <option value="servicios">Servicios</option>
+        </select>
+      </div>
+      <button onclick="agregarGastoManual()" style="width:100%;margin-top:6px;background:linear-gradient(135deg,rgba(0,255,157,0.1),rgba(0,212,255,0.1));border:1px solid rgba(0,255,157,0.3);border-radius:8px;color:var(--accent3);padding:8px;cursor:pointer;font-size:0.82rem;font-family:'Inter',sans-serif">
+        + Registrar gasto
+      </button>
     </div>
 
     <div class="panel-seccion">
@@ -966,6 +1026,8 @@
     async function cargarPanel() {
       // Recordatorios
       cargarRecordatorios();
+      // Gastos
+      cargarGastos();
       // Hechos
       try {
         const res = await fetch('/memoria');
@@ -1927,7 +1989,152 @@
     }
 
     // ============================================================
-    // FIN SISTEMA DE RECORDATORIOS
+    // GASTOS
+    // ============================================================
+    const CAT_ICONOS = {
+      comida:'🍔', transporte:'🚗', salud:'💊', entretenimiento:'🎮',
+      ropa:'👕', servicios:'⚡', general:'📦'
+    };
+
+    async function cargarGastos() {
+      try {
+        const res = await fetch('/gastos');
+        if (!res.ok) return;
+        const data = await res.json();
+        const lista = document.getElementById('listaGastos');
+        const totalEl = document.getElementById('gastoTotal');
+
+        if (!data.gastos || data.gastos.length === 0) {
+          lista.innerHTML = '<span style="color:var(--text-dim);font-size:0.8rem">Sin gastos registrados este mes</span>';
+          totalEl.textContent = '';
+          return;
+        }
+
+        // Total
+        totalEl.textContent = '$' + data.total.toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+        // Resumen por categoría
+        const porCat = {};
+        data.gastos.forEach(g => {
+          porCat[g.categoria] = (porCat[g.categoria] || 0) + g.monto;
+        });
+        const pillsHTML = Object.entries(porCat)
+          .sort((a,b) => b[1]-a[1])
+          .slice(0,4)
+          .map(([cat, total]) =>
+            `<span class="gastos-cat-pill">${CAT_ICONOS[cat]||'📦'} ${cat} $${total.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>`
+          ).join('');
+
+        // Lista (últimos 15)
+        const items = data.gastos.slice(0,15).map(g => `
+          <div class="gasto-item">
+            <span style="font-size:1rem">${CAT_ICONOS[g.categoria]||'📦'}</span>
+            <div class="gasto-info">
+              <div class="gasto-desc">${g.descripcion}</div>
+              <div class="gasto-meta">${g.fecha} · ${g.categoria}</div>
+            </div>
+            <div class="gasto-monto">$${g.monto.toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+            <button class="gasto-del" onclick="eliminarGasto(${g.id})" title="Eliminar">✕</button>
+          </div>`).join('');
+
+        lista.innerHTML = `<div class="gastos-resumen">${pillsHTML}</div>${items}`;
+      } catch(e) {
+        document.getElementById('listaGastos').innerHTML =
+          '<span style="color:var(--text-dim);font-size:0.8rem">Error cargando</span>';
+      }
+    }
+
+    async function agregarGastoManual() {
+      const descripcion = document.getElementById('gastoDesc').value.trim();
+      const monto = parseFloat(document.getElementById('gastoMonto').value);
+      const categoria = document.getElementById('gastoCat').value;
+      if (!descripcion || !monto || monto <= 0) {
+        alert('Escribe la descripción y el monto.');
+        return;
+      }
+      try {
+        const res = await fetch('/gastos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ descripcion, monto, categoria })
+        });
+        if (res.ok) {
+          document.getElementById('gastoDesc').value = '';
+          document.getElementById('gastoMonto').value = '';
+          cargarGastos();
+        }
+      } catch(e) {}
+    }
+
+    async function eliminarGasto(id) {
+      try {
+        await fetch(`/gastos/${id}`, { method: 'DELETE' });
+        cargarGastos();
+      } catch(e) {}
+    }
+
+    // Detectar y guardar gastos mencionados en el chat
+    // Akuzfiro ya responde con [GASTO] cuando detecta un gasto
+    function procesarGastoChat(texto) {
+      const regex = /\[GASTO\]([\s\S]*?)\[\/GASTO\]/;
+      const match = texto.match(regex);
+      if (!match) return texto;
+      try {
+        const data = JSON.parse(match[1]);
+        if (data.descripcion && data.monto) {
+          fetch('/gastos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              descripcion: data.descripcion,
+              monto: parseFloat(data.monto),
+              categoria: data.categoria || 'general'
+            })
+          }).then(() => cargarGastos());
+        }
+      } catch(e) {}
+      return texto.replace(regex, '').trim();
+    }
+
+    // ============================================================
+    // NOTICIAS DEL DÍA
+    // ============================================================
+    async function pedirNoticias() {
+      togglePanel(); // Cerrar panel
+      const temas = 'tecnología inteligencia artificial México deportes ciencia';
+      const mensaje = `Dame un resumen de las noticias más importantes de hoy (${new Date().toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'})}) sobre: ${temas}. Organízalo por tema, máximo 3 noticias por tema, muy breve cada una.`;
+
+      const btnNot = document.getElementById('btnNoticias');
+      if (btnNot) btnNot.textContent = '⏳ Buscando...';
+
+      agregarMensaje('📰 Noticias del día', 'usuario');
+      mostrarTyping();
+      btnEl.disabled = true;
+
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mensaje })
+        });
+        const data = await res.json();
+        quitarTyping();
+        if (data.respuesta) {
+          const textoFinal = agregarMensaje(data.respuesta, 'akuzfiro');
+          if (gttsActivo) hablarGTTS(textoFinal || data.respuesta);
+          else if (vozActiva) hablar(textoFinal || data.respuesta);
+        }
+      } catch(e) {
+        quitarTyping();
+        agregarMensaje('No pude obtener las noticias ahora.', 'akuzfiro');
+      } finally {
+        btnEl.disabled = false;
+        if (btnNot) btnNot.textContent = '📰 Noticias del día';
+      }
+    }
+
+    // ============================================================
+    // FIN GASTOS Y NOTICIAS
     // ============================================================
 
     if ('serviceWorker' in navigator) {
@@ -1986,6 +2193,9 @@
           }
         } catch(e) {}
       }
+
+      // Procesar gasto si existe
+      textoLimpio = procesarGastoChat(textoLimpio);
 
       return { textoLimpio, archivoData, tipoArchivo };
     }

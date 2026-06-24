@@ -102,6 +102,12 @@ RECORDATORIOS — cuando Gustavo diga algo como "avísame a las X", "recuérdame
 [RECORDATORIO]{"frase":"<la frase completa del usuario>"}[/RECORDATORIO]
 3. Solo incluye el bloque, el frontend hace el resto automáticamente
 4. Si Gustavo pregunta "¿qué recordatorios tengo?", dile que los puede ver en el menú ☰ → Recordatorios
+
+GASTOS — cuando Gustavo diga algo como "gasté X en Y", "pagué X de Y", "compré Y por X", "anota X pesos de Y":
+1. Confirma brevemente (ej: "Anotado. 200 en gasolina.")
+2. Al final incluye este bloque exacto:
+[GASTO]{"descripcion":"<qué compró>","monto":<número sin signos>,"categoria":"<comida|transporte|salud|entretenimiento|ropa|servicios|general>"}[/GASTO]
+3. Si Gustavo pregunta "¿cuánto he gastado?" o "¿en qué va el mes?", dile que lo puede ver en el menú ☰ → Gastos del mes
 """
 
 
@@ -343,9 +349,10 @@ def necesita_busqueda(mensaje):
     palabras = [
         "busca", "buscar", "encuentra", "enlace", "link", "url", "página",
         "sitio", "web", "dónde", "donde", "precio de", "cuánto cuesta",
-        "noticias", "información sobre", "descarga", "descargar",
+        "noticias", "noticia", "hoy", "últimas", "información sobre", "descarga", "descargar",
         "video de", "youtube", "cómo llego", "tutorial", "qué es",
-        "quién es", "cuándo", "recomienda", "recomiéndame"
+        "quién es", "cuándo", "recomienda", "recomiéndame",
+        "resumen de", "qué pasó", "novedad"
     ]
     return any(p in mensaje.lower() for p in palabras)
 
@@ -448,10 +455,11 @@ def chat():
         {"role": "user", "content": mensaje}
     ]
 
-    # Detectar si el mensaje pide crear un archivo
+    # Detectar si el mensaje pide crear un archivo o noticias
     palabras_archivo = ["crea", "crear", "genera", "generar", "haz", "hacer", "excel", "pdf", "word", "powerpoint", "pptx", "documento", "presentacion", "presentación", "reporte", "bitacora", "bitácora"]
-    es_archivo = any(p in mensaje.lower() for p in palabras_archivo)
-    tokens_max = 1500 if es_archivo else 800
+    palabras_largas = palabras_archivo + ["noticias", "noticia", "resumen de", "qué pasó", "últimas"]
+    es_largo = any(p in mensaje.lower() for p in palabras_largas)
+    tokens_max = 1500 if es_largo else 800
 
     try:
         response = client.chat.completions.create(
