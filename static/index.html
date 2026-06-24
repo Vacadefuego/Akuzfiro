@@ -2351,16 +2351,19 @@
       const regexWord = /\[ARCHIVO_WORD\]([\s\S]*?)\[\/ARCHIVO_WORD\]/;
       const regexPPTX = /\[ARCHIVO_PPTX\]([\s\S]*?)\[\/ARCHIVO_PPTX\]/;
       const regexRec  = /\[RECORDATORIO\]([\s\S]*?)\[\/RECORDATORIO\]/;
+      const regexImg  = /\[IMAGEN\]([\s\S]*?)\[\/IMAGEN\]/;
 
       let textoLimpio = texto;
       let archivoData = null;
       let tipoArchivo = null;
+      let imagenGenerada = null;
 
       const matchExcel = texto.match(regexExcel);
-      const matchPDF = texto.match(regexPDF);
-      const matchWord = texto.match(regexWord);
-      const matchPPTX = texto.match(regexPPTX);
-      const matchRec  = texto.match(regexRec);
+      const matchPDF   = texto.match(regexPDF);
+      const matchWord  = texto.match(regexWord);
+      const matchPPTX  = texto.match(regexPPTX);
+      const matchRec   = texto.match(regexRec);
+      const matchImg   = texto.match(regexImg);
 
       if (matchExcel) {
         try { archivoData = JSON.parse(matchExcel[1]); tipoArchivo = 'excel'; textoLimpio = texto.replace(regexExcel, '').trim(); } catch(e) {}
@@ -2372,22 +2375,27 @@
         try { archivoData = JSON.parse(matchPPTX[1]); tipoArchivo = 'pptx'; textoLimpio = texto.replace(regexPPTX, '').trim(); } catch(e) {}
       }
 
-      // Procesar recordatorio si existe (independiente de archivos)
+      // Procesar recordatorio
       if (matchRec) {
         textoLimpio = textoLimpio.replace(regexRec, '').trim();
         try {
           const recData = JSON.parse(matchRec[1]);
-          if (recData.frase) {
-            // Parsear y guardar de forma asíncrona
-            procesarRecordatorioFrase(recData.frase);
-          }
+          if (recData.frase) procesarRecordatorioFrase(recData.frase);
         } catch(e) {}
       }
 
-      // Procesar gasto si existe
+      // Procesar gasto
       textoLimpio = procesarGastoChat(textoLimpio);
 
-      return { textoLimpio, archivoData, tipoArchivo };
+      // Procesar imagen generada
+      if (matchImg) {
+        textoLimpio = textoLimpio.replace(regexImg, '').trim();
+        try {
+          imagenGenerada = JSON.parse(matchImg[1]);
+        } catch(e) {}
+      }
+
+      return { textoLimpio, archivoData, tipoArchivo, imagenGenerada };
     }
 
     async function descargarArchivo(tipo, datos) {
@@ -2453,6 +2461,51 @@
         textoFinal = resultado.textoLimpio;
         archivoData = resultado.archivoData;
         tipoArchivo = resultado.tipoArchivo;
+
+        // Si hay imagen generada, agregarla al mensaje
+        if (resultado.imagenGenerada) {
+          const imgData = resultado.imagenGenerada;
+          const ancho = imgData.ancho || 1024;
+          const alto  = imgData.alto  || 768;
+          const promptEnc = encodeURIComponent(imgData.prompt);
+          const seed = Math.floor(Math.random() * 99999);
+          const imgUrl = `https://image.pollinations.ai/prompt/${promptEnc}?width=${ancho}&height=${alto}&seed=${seed}&nologo=true`;
+
+          // Mostrar spinner mientras carga
+          const imgWrapper = document.createElement('div');
+          imgWrapper.style.cssText = 'margin-top:10px;position:relative;';
+
+          const spinner = document.createElement('div');
+          spinner.style.cssText = 'color:var(--text-dim);font-size:0.8rem;padding:8px 0;';
+          spinner.textContent = '🎨 Generando imagen...';
+          imgWrapper.appendChild(spinner);
+
+          const img = document.createElement('img');
+          img.style.cssText = 'max-width:100%;border-radius:12px;border:1px solid rgba(112,0,255,0.4);display:none;cursor:pointer;margin-top:6px;';
+          img.onload = () => { spinner.remove(); img.style.display = 'block'; chatEl.scrollTop = chatEl.scrollHeight; };
+          img.onerror = () => { spinner.textContent = '⚠️ No se pudo generar la imagen. Intenta de nuevo.'; };
+          img.onclick = () => window.open(imgUrl, '_blank');
+          img.src = imgUrl;
+          img.alt = imgData.prompt;
+          imgWrapper.appendChild(img);
+
+          // Botón descargar
+          const btnDl = document.createElement('a');
+          btnDl.href = imgUrl;
+          btnDl.download = 'akuzfiro-imagen.jpg';
+          btnDl.target = '_blank';
+          btnDl.style.cssText = 'display:none;margin-top:6px;';
+          btnDl.className = 'btn-descarga';
+          btnDl.textContent = '⬇️ Descargar imagen';
+          img.onload = () => {
+            spinner.remove();
+            img.style.display = 'block';
+            btnDl.style.display = 'inline-block';
+            chatEl.scrollTop = chatEl.scrollHeight;
+          };
+          imgWrapper.appendChild(btnDl);
+          burbuja.appendChild(imgWrapper);
+        }
       }
 
       contenido.innerHTML = linkifyText(textoFinal);

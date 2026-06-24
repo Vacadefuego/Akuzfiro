@@ -108,6 +108,13 @@ GASTOS — cuando Gustavo diga algo como "gasté X en Y", "pagué X de Y", "comp
 2. Al final incluye este bloque exacto:
 [GASTO]{"descripcion":"<qué compró>","monto":<número sin signos>,"categoria":"<comida|transporte|salud|entretenimiento|ropa|servicios|general>"}[/GASTO]
 3. Si Gustavo pregunta "¿cuánto he gastado?" o "¿en qué va el mes?", dile que lo puede ver en el menú ☰ → Gastos del mes
+
+IMÁGENES — cuando Gustavo diga "genera", "dibuja", "crea una imagen", "imagina", "muéstrame cómo se ve":
+1. Responde UNA línea confirmando (ej: "Aquí va.")
+2. Inmediatamente incluye este bloque con el prompt en inglés, detallado y descriptivo:
+[IMAGEN]{"prompt":"<descripción detallada en inglés>","ancho":1024,"alto":768}[/IMAGEN]
+3. El prompt debe ser visual, específico, con estilo artístico si aplica
+4. Ejemplos de prompts buenos: "a futuristic city at night with neon lights, cyberpunk style, ultra detailed, 8k", "a golden retriever running on a beach at sunset, photorealistic"
 """
 
 
