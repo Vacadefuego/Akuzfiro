@@ -398,16 +398,22 @@ def texto_a_voz(texto):
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.json
-    mensaje = data.get("mensaje", "")
+    mensaje = data.get("mensaje", "") or ""
     con_voz = data.get("voz", False)
+    imagen_b64 = data.get("imagen", None)   # base64 de la imagen (opcional)
+    imagen_mime = data.get("mime", "image/jpeg")  # tipo MIME
 
-    if not mensaje:
+    # Si hay imagen, el mensaje puede ser vacío (solo foto) o tener texto
+    if not mensaje and not imagen_b64:
         return jsonify({"error": "Mensaje vacío"}), 400
+
+    # Si solo hay imagen sin texto, agregar instrucción por defecto
+    if imagen_b64 and not mensaje:
+        mensaje = "Analiza esta imagen y dime qué ves. Sé detallado."
 
     tz_mexico = pytz.timezone("America/Mexico_City")
     ahora = datetime.now(tz_mexico).strftime("%A %d de %B de %Y, %H:%M hrs")
 
-    # Obtener clima de Xalapa
     clima = obtener_clima()
     info_contexto = f"FECHA Y HORA: {ahora} (Xalapa, Veracruz, México)"
     if clima:
@@ -415,7 +421,6 @@ def chat():
     hechos = cargar_hechos()
     conversaciones = cargar_conversaciones(10)
 
-    # Cargar comandos personalizados
     try:
         conn = get_conn()
         rows = conn.run("SELECT nombre, acciones FROM comandos ORDER BY id")
@@ -445,35 +450,53 @@ def chat():
             a = conv['akuzfiro'][:300] if len(conv['akuzfiro']) > 300 else conv['akuzfiro']
             system_prompt += f"Gustavo: {u}\nAkuzfiro: {a}\n"
 
-    if necesita_busqueda(mensaje):
+    if not imagen_b64 and necesita_busqueda(mensaje):
         info_web = buscar_web(mensaje)
         if info_web:
             system_prompt += f"\n\nINFORMACIÓN WEB ENCONTRADA:\n{info_web}"
 
+    # Construir el mensaje de usuario — con o sin imagen
+    if imagen_b64:
+        # Modelo de visión — mensaje multimodal
+        user_content = [
+            {
+                "type": "text",
+                "text": mensaje
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{imagen_mime};base64,{imagen_b64}"
+                }
+            }
+        ]
+        modelo = "llama-3.2-90b-vision-preview"
+        tokens_max = 1024
+    else:
+        user_content = mensaje
+        palabras_archivo = ["crea", "crear", "genera", "generar", "haz", "hacer", "excel", "pdf", "word", "powerpoint", "pptx", "documento", "presentacion", "presentación", "reporte", "bitacora", "bitácora"]
+        palabras_largas = palabras_archivo + ["noticias", "noticia", "resumen de", "qué pasó", "últimas"]
+        es_largo = any(p in mensaje.lower() for p in palabras_largas)
+        tokens_max = 1500 if es_largo else 800
+        modelo = "llama-3.3-70b-versatile"
+
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": mensaje}
+        {"role": "user", "content": user_content}
     ]
-
-    # Detectar si el mensaje pide crear un archivo o noticias
-    palabras_archivo = ["crea", "crear", "genera", "generar", "haz", "hacer", "excel", "pdf", "word", "powerpoint", "pptx", "documento", "presentacion", "presentación", "reporte", "bitacora", "bitácora"]
-    palabras_largas = palabras_archivo + ["noticias", "noticia", "resumen de", "qué pasó", "últimas"]
-    es_largo = any(p in mensaje.lower() for p in palabras_largas)
-    tokens_max = 1500 if es_largo else 800
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=modelo,
             messages=messages,
             temperature=0.85,
             max_tokens=tokens_max,
-            frequency_penalty=0.3,
-            presence_penalty=0.1
+            frequency_penalty=0.3 if not imagen_b64 else 0,
+            presence_penalty=0.1 if not imagen_b64 else 0
         )
         respuesta = response.choices[0].message.content
         guardar_conversacion(mensaje, respuesta)
 
-        # Extraer hechos cada 3 conversaciones
         try:
             conn = get_conn()
             count = conn.run("SELECT COUNT(*) FROM conversaciones")[0][0]
@@ -483,15 +506,13 @@ def chat():
         except Exception:
             pass
 
-        # Generar audio si se pidió voz
-        audio_b64 = None
+        audio_b64_resp = None
         if con_voz and ELEVENLABS_API_KEY:
             audio_bytes = texto_a_voz(respuesta)
             if audio_bytes:
-                import base64
-                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                audio_b64_resp = base64.b64encode(audio_bytes).decode("utf-8")
 
-        return jsonify({"respuesta": respuesta, "audio": audio_b64})
+        return jsonify({"respuesta": respuesta, "audio": audio_b64_resp})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -540,6 +561,60 @@ def tts():
         tts_obj.write_to_fp(buf)
         buf.seek(0)
         return send_file(buf, mimetype="audio/mpeg")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/analizar-imagen", methods=["POST"])
+def analizar_imagen():
+    """
+    Recibe una imagen en base64 y una pregunta opcional.
+    Usa llama-4-scout (visión) para analizarla.
+    """
+    try:
+        data = request.json
+        imagen_b64 = data.get("imagen", "")      # data:image/jpeg;base64,....
+        pregunta   = data.get("pregunta", "").strip()
+        if not imagen_b64:
+            return jsonify({"error": "Sin imagen"}), 400
+
+        # Asegurar que viene con el prefijo data URI
+        if not imagen_b64.startswith("data:"):
+            imagen_b64 = "data:image/jpeg;base64," + imagen_b64
+
+        if not pregunta:
+            pregunta = ("Analiza esta imagen en detalle. Describe qué ves, "
+                        "identifica objetos, texto, personas, animales, plantas "
+                        "o cualquier cosa relevante. Si hay texto, léelo completo. "
+                        "Responde en español de forma natural y directa.")
+
+        tz_mexico = pytz.timezone("America/Mexico_City")
+        ahora = datetime.now(tz_mexico).strftime("%A %d de %B de %Y, %H:%M hrs")
+
+        system_vision = (PERSONALIDAD.split("REGLA #1")[0].strip() +
+                         f"\n\nFECHA Y HORA: {ahora} (Xalapa, Veracruz, México)")
+
+        messages = [
+            {"role": "system", "content": system_vision},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text",      "text": pregunta},
+                    {"type": "image_url", "image_url": {"url": imagen_b64}}
+                ]
+            }
+        ]
+
+        response = client.chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=1200
+        )
+        respuesta = response.choices[0].message.content
+        guardar_conversacion(f"[IMAGEN] {pregunta}", respuesta)
+        return jsonify({"respuesta": respuesta})
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

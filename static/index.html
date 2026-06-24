@@ -481,6 +481,118 @@
       50% { box-shadow: 0 0 0 8px rgba(255, 50, 50, 0); }
     }
 
+    #btnImagen {
+      width: 40px; height: 40px;
+      background: rgba(112, 0, 255, 0.1);
+      border: 1px solid rgba(112, 0, 255, 0.25);
+      border-radius: 10px; color: white;
+      cursor: pointer; font-size: 1rem;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s; flex-shrink: 0;
+    }
+    #btnImagen:hover { background: rgba(112, 0, 255, 0.2); }
+    #btnImagen.con-imagen {
+      background: rgba(112, 0, 255, 0.25);
+      border-color: rgba(112, 0, 255, 0.6);
+      box-shadow: 0 0 10px rgba(112, 0, 255, 0.3);
+    }
+
+    /* Preview de imagen seleccionada */
+    #imagenPreview {
+      display: none;
+      position: relative;
+      margin: 0 0 8px 0;
+      width: fit-content;
+    }
+    #imagenPreview img {
+      max-height: 120px; max-width: 200px;
+      border-radius: 10px;
+      border: 1px solid rgba(112, 0, 255, 0.4);
+      display: block;
+    }
+    #imagenPreview .preview-quitar {
+      position: absolute; top: -8px; right: -8px;
+      background: #ff4444; border: none; border-radius: 50%;
+      width: 20px; height: 20px; color: white;
+      cursor: pointer; font-size: 0.7rem;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* Imagen en el chat */
+    .imagen-chat {
+      max-width: 240px; max-height: 200px;
+      border-radius: 10px;
+      border: 1px solid rgba(112, 0, 255, 0.3);
+      display: block; margin-bottom: 6px;
+      cursor: pointer;
+    }
+    .imagen-chat:hover { opacity: 0.9; }
+
+    /* BOTÓN CÁMARA */
+    #btnCamara {
+      width: 40px; height: 40px;
+      background: rgba(112, 0, 255, 0.1);
+      border: 1px solid rgba(112, 0, 255, 0.3);
+      border-radius: 10px; color: white; cursor: pointer;
+      font-size: 1rem; display: flex; align-items: center;
+      justify-content: center; transition: all 0.2s; flex-shrink: 0;
+    }
+    #btnCamara:hover { background: rgba(112, 0, 255, 0.2); }
+
+    /* PREVIEW imagen adjunta en input */
+    #previewContainer {
+      display: none; padding: 6px 18px 0;
+      align-items: center; gap: 8px;
+    }
+    #previewImg {
+      width: 52px; height: 52px; object-fit: cover;
+      border-radius: 8px; border: 1px solid rgba(112,0,255,0.4);
+    }
+    #previewQuitar {
+      background: none; border: none; color: var(--text-dim);
+      cursor: pointer; font-size: 1.1rem; padding: 2px 6px;
+    }
+    #previewQuitar:hover { color: #ff6b6b; }
+    #previewLabel {
+      font-size: 0.72rem; color: var(--accent2); letter-spacing: 1px;
+    }
+
+    /* MODAL CÁMARA */
+    #modalCamara {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.92); z-index: 5000;
+      flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+    }
+    #modalCamara.visible { display: flex; }
+    #videoCamara {
+      width: min(480px, 96vw); border-radius: 14px;
+      border: 1px solid rgba(112,0,255,0.4);
+      background: #000;
+    }
+    .camara-btns { display: flex; gap: 12px; }
+    .camara-btn {
+      padding: 12px 28px; border-radius: 10px; border: none;
+      cursor: pointer; font-size: 0.9rem; font-family: 'Inter', sans-serif;
+      font-weight: 600; transition: all 0.2s;
+    }
+    #btnCapturar {
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      color: white;
+    }
+    #btnCerrarCamara {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--border) !important;
+      color: var(--text-dim);
+    }
+    #canvasCaptura { display: none; }
+
+    /* IMAGEN en burbuja del chat */
+    .msg-imagen {
+      max-width: 260px; border-radius: 10px;
+      border: 1px solid rgba(112,0,255,0.3);
+      margin-bottom: 8px; display: block;
+    }
+
     .btn-descarga {
       margin-top: 8px;
       padding: 8px 16px;
@@ -981,6 +1093,22 @@
     </div>
   </div>
 
+  <!-- MODAL CÁMARA -->
+  <div id="modalCamara">
+    <div style="font-family:'Rajdhani',sans-serif;font-size:1rem;letter-spacing:3px;color:var(--accent2)">CÁMARA — AKUZFIRO VISION</div>
+    <video id="videoCamara" autoplay playsinline muted></video>
+    <canvas id="canvasCaptura"></canvas>
+    <div class="camara-btns">
+      <button class="camara-btn" id="btnCapturar" onclick="capturarFoto()">📸 Capturar</button>
+      <button class="camara-btn" id="btnCerrarCamara" onclick="cerrarCamara()">✕ Cerrar</button>
+    </div>
+    <div style="font-size:0.72rem;color:var(--text-dim);letter-spacing:1px">O sube una foto desde tu galería</div>
+    <label style="cursor:pointer;padding:8px 20px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--text-dim);font-size:0.82rem">
+      🖼️ Galería
+      <input type="file" accept="image/*" style="display:none" onchange="cargarDesdeGaleria(event)">
+    </label>
+  </div>
+
   <div id="chat">
     <div class="bienvenida" id="bienvenida">
       <div class="bienvenida-title">AKUZFIRO</div>
@@ -990,11 +1118,19 @@
   </div>
 
   <div id="inputArea">
+    <div id="imagenPreview">
+      <img id="imagenPreviewImg" src="" alt="preview">
+      <button class="preview-quitar" onclick="quitarImagen()" title="Quitar imagen">✕</button>
+    </div>
     <div class="input-container">
       <textarea id="input" placeholder="Escribe o habla con Akuzfiro..." rows="1"></textarea>
       <button id="btnMic" onclick="toggleMic()" title="Hablar">
         🎤
       </button>
+      <button id="btnImagen" onclick="document.getElementById('inputImagen').click()" title="Enviar imagen">
+        📷
+      </button>
+      <input type="file" id="inputImagen" accept="image/*" capture="environment" style="display:none" onchange="seleccionarImagen(this)">
       <button id="btnEnviar" onclick="enviar()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -2134,7 +2270,61 @@
     }
 
     // ============================================================
-    // FIN GASTOS Y NOTICIAS
+    // SISTEMA DE IMÁGENES
+    // ============================================================
+    let imagenBase64 = null;
+    let imagenMime = 'image/jpeg';
+
+    function seleccionarImagen(input) {
+      const file = input.files[0];
+      if (!file) return;
+      imagenMime = file.type || 'image/jpeg';
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        // Extraer solo el base64 sin el prefijo
+        imagenBase64 = dataUrl.split(',')[1];
+        // Mostrar preview
+        document.getElementById('imagenPreviewImg').src = dataUrl;
+        document.getElementById('imagenPreview').style.display = 'block';
+        document.getElementById('btnImagen').classList.add('con-imagen');
+        // Foco al input para que el usuario pueda escribir la pregunta
+        inputEl.focus();
+        inputEl.placeholder = 'Pregunta algo sobre la imagen... (o envía sin texto)';
+      };
+      reader.readAsDataURL(file);
+      // Limpiar el input para poder seleccionar la misma imagen otra vez
+      input.value = '';
+    }
+
+    function quitarImagen() {
+      imagenBase64 = null;
+      imagenMime = 'image/jpeg';
+      document.getElementById('imagenPreview').style.display = 'none';
+      document.getElementById('imagenPreviewImg').src = '';
+      document.getElementById('btnImagen').classList.remove('con-imagen');
+      inputEl.placeholder = 'Escribe o habla con Akuzfiro...';
+    }
+
+    // Mostrar imagen en el chat (mensaje del usuario)
+    function agregarImagenChat(dataUrl, tipo) {
+      const wrapper = document.createElement('div');
+      wrapper.className = `mensaje-wrapper ${tipo}`;
+      const label = document.createElement('div');
+      label.className = 'mensaje-label';
+      label.textContent = 'TÚ';
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.className = 'imagen-chat';
+      img.onclick = () => window.open(dataUrl, '_blank');
+      wrapper.appendChild(label);
+      wrapper.appendChild(img);
+      if (bienvenida) bienvenida.style.display = 'none';
+      chatEl.appendChild(wrapper);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+    // ============================================================
+    // FIN SISTEMA DE IMÁGENES
     // ============================================================
 
     if ('serviceWorker' in navigator) {
@@ -2298,19 +2488,36 @@
 
     async function enviar() {
       const mensaje = inputEl.value.trim();
-      if (!mensaje) return;
+      if (!mensaje && !imagenBase64) return;
 
-      agregarMensaje(mensaje, 'usuario');
+      // Si hay imagen, mostrarla en el chat primero
+      if (imagenBase64) {
+        const previewSrc = document.getElementById('imagenPreviewImg').src;
+        agregarImagenChat(previewSrc, 'usuario');
+      }
+
+      if (mensaje) agregarMensaje(mensaje, 'usuario');
       inputEl.value = '';
       inputEl.style.height = 'auto';
       btnEl.disabled = true;
       mostrarTyping();
 
+      // Capturar y limpiar imagen antes del fetch
+      const imgB64 = imagenBase64;
+      const imgMime = imagenMime;
+      if (imagenBase64) quitarImagen();
+
       try {
+        const payload = { mensaje };
+        if (imgB64) {
+          payload.imagen = imgB64;
+          payload.mime = imgMime;
+        }
+
         const res = await fetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mensaje })
+          body: JSON.stringify(payload)
         });
 
         const data = await res.json();
