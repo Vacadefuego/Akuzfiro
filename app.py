@@ -470,7 +470,7 @@ def chat():
                 }
             }
         ]
-        modelo = "llama-3.2-90b-vision-preview"
+        modelo = "meta-llama/llama-4-scout-17b-16e-instruct"
         tokens_max = 1024
     else:
         user_content = mensaje
