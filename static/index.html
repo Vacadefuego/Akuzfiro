@@ -2387,12 +2387,29 @@
       // Procesar gasto
       textoLimpio = procesarGastoChat(textoLimpio);
 
-      // Procesar imagen generada
+      // Procesar imagen generada — tolerante a formatos incorrectos del modelo
       if (matchImg) {
         textoLimpio = textoLimpio.replace(regexImg, '').trim();
         try {
           imagenGenerada = JSON.parse(matchImg[1]);
         } catch(e) {}
+      }
+
+      // Fallback: buscar JSON con "prompt" si el bloque no vino bien formado
+      if (!imagenGenerada) {
+        const jsonFallback = texto.match(/\{[^{}]*"prompt"\s*:\s*"([^"]+)"[^{}]*\}/);
+        if (jsonFallback) {
+          try {
+            const raw = jsonFallback[0]
+              .replace(/"ancho"\s*:/gi, '"ancho":')
+              .replace(/"alto"\s*:/gi,  '"alto":')
+              .replace(/"width"\s*:/gi, '"ancho":')
+              .replace(/"height"\s*:/gi,'"alto":');
+            imagenGenerada = JSON.parse(raw);
+            // Limpiar el JSON del texto visible
+            textoLimpio = textoLimpio.replace(jsonFallback[0], '').replace(/\[IMAGEN\]|\[\/IMAGEN\]/g, '').trim();
+          } catch(e) {}
+        }
       }
 
       return { textoLimpio, archivoData, tipoArchivo, imagenGenerada };
