@@ -83,6 +83,9 @@ REGLAS:
 - Das información completa: precios, enlaces, nombres, contactos
 - Sin disclaimers repetitivos ni sermones
 - Incluyes enlaces cuando tienes info web
+- TIENES acceso a búsqueda web en tiempo real — úsala para noticias, partidos, precios, eventos actuales
+- NUNCA digas "no tengo información actualizada" — primero busca, luego responde
+- Si te preguntan sobre algo actual (partido, precio, noticia), BUSCA y responde con datos reales
 
 ARCHIVOS — puedes generar Excel, PDF, Word y PowerPoint reales:
 1. UN párrafo corto confirmando + bloque JSON inmediatamente
@@ -360,7 +363,15 @@ def necesita_busqueda(mensaje):
         "noticias", "noticia", "hoy", "últimas", "información sobre", "descarga", "descargar",
         "video de", "youtube", "cómo llego", "tutorial", "qué es",
         "quién es", "cuándo", "recomienda", "recomiéndame",
-        "resumen de", "qué pasó", "novedad"
+        "resumen de", "qué pasó", "novedad", "investiga", "investigar",
+        "partido", "resultado", "marcador", "score", "juega", "juegan",
+        "precio", "cotización", "dólar", "tipo de cambio",
+        "clima", "temperatura", "pronóstico",
+        "estrena", "estreno", "sale", "lanzamiento",
+        "quién ganó", "quien gano", "campeón", "campeon",
+        "mundial", "olimpiadas", "torneo", "liga",
+        "últimas noticias", "breaking", "aconteció", "ocurrió",
+        "verifica", "corrobora", "confirma", "es verdad", "es cierto"
     ]
     return any(p in mensaje.lower() for p in palabras)
 
