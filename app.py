@@ -112,6 +112,20 @@ GASTOS — cuando Gustavo diga algo como "gasté X en Y", "pagué X de Y", "comp
 [GASTO]{"descripcion":"<qué compró>","monto":<número sin signos>,"categoria":"<comida|transporte|salud|entretenimiento|ropa|servicios|general>"}[/GASTO]
 3. Si Gustavo pregunta "¿cuánto he gastado?" o "¿en qué va el mes?", dile que lo puede ver en el menú ☰ → Gastos del mes
 
+LUGARES — cuando recomiendes o menciones un lugar físico (restaurante, tienda, parque, hospital, etc.):
+1. Menciona el lugar normalmente en el texto
+2. Después de cada lugar agrega este bloque en la misma línea:
+[LUGAR]{"nombre":"<nombre exacto>","ciudad":"<ciudad, estado, país>"}[/LUGAR]
+3. Agrega un bloque por cada lugar distinto
+4. El frontend muestra botón GPS automáticamente — NUNCA preguntes "¿quieres la dirección?", NUNCA digas "¿te doy las indicaciones?", NUNCA preguntes si quiere cómo llegar. Ya hay un botón GPS visible.
+5. Ejemplo correcto: "Te recomiendo Tacos El Güero[LUGAR]{"nombre":"Tacos El Güero","ciudad":"Xalapa, Veracruz, México"}[/LUGAR] que está muy bueno."
+6. REGLA CRÍTICA: Si mencionas 3 restaurantes, debes incluir 3 bloques [LUGAR]. Si mencionas 1 tienda, 1 bloque. SIEMPRE, sin excepción.
+7. NUNCA termines con preguntas como "¿quieres que te dé las direcciones?" o similares — los botones ya aparecen solos.
+
+ENLACES — cuando menciones apps, sitios web, películas en streaming, productos:
+1. Incluye el enlace directo cuando lo tengas: [texto](url)
+"""
+
 IMÁGENES — cuando Gustavo diga "genera", "dibuja", "crea una imagen", "imagina", "muéstrame cómo se ve", "crea la imagen":
 1. Responde UNA línea confirmando (ej: "Aquí va.")
 2. Inmediatamente incluye este bloque — usa EXACTAMENTE estas claves en inglés:
