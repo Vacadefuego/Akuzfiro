@@ -559,6 +559,48 @@ def chat():
         )
         respuesta = response.choices[0].message.content
 
+        # --- GUARDAR CALENDARIO EN MEMORIA si la imagen parece un calendario ---
+        if imagen_b64:
+            palabras_calendario = ["calendario", "agenda", "horario", "schedule", "fechas",
+                                   "actividades", "eventos", "clases", "materias", "semestre"]
+            es_calendario = any(p in mensaje.lower() for p in palabras_calendario) or \
+                            any(p in respuesta.lower() for p in ["enero","febrero","marzo","abril","mayo",
+                                "junio","julio","agosto","septiembre","octubre","noviembre","diciembre",
+                                "lunes","martes","miércoles","jueves","viernes","semana","mes"])
+            if es_calendario:
+                try:
+                    extractor = client.chat.completions.create(
+                        model="meta-llama/llama-4-scout-17b-16e-instruct",
+                        messages=[
+                            {"role": "system", "content": (
+                                "Extrae TODOS los eventos, fechas, actividades, clases o tareas de esta imagen de calendario. "
+                                "Responde SOLO con una lista, un evento por línea, en formato: "
+                                "'FECHA: descripción del evento'. "
+                                "Si hay materias o clases con horario, incluye día y hora. "
+                                "Sé específico y completo. Sin explicaciones adicionales."
+                            )},
+                            {"role": "user", "content": [
+                                {"type": "text", "text": "Extrae todos los eventos de este calendario:"},
+                                {"type": "image_url", "image_url": {"url": f"data:{imagen_mime};base64,{imagen_b64}"}}
+                            ]}
+                        ],
+                        temperature=0.0,
+                        max_tokens=1000
+                    )
+                    eventos_texto = extractor.choices[0].message.content.strip()
+                    if eventos_texto and len(eventos_texto) > 10:
+                        # Guardar cada evento como hecho
+                        for linea in eventos_texto.split("\n"):
+                            linea = linea.strip().lstrip("-•*·123456789. ")
+                            if len(linea) > 5:
+                                guardar_hecho(f"[CALENDARIO] {linea}")
+                        # También guardar un resumen completo
+                        guardar_hecho(f"[CALENDARIO COMPLETO] {eventos_texto[:800]}")
+                        print(f"Calendario guardado: {len(eventos_texto.split(chr(10)))} eventos")
+                except Exception as ex:
+                    print(f"Error extrayendo calendario: {ex}")
+        # --- FIN GUARDAR CALENDARIO ---
+
         # --- POST-PROCESO: inyectar tags [LUGAR] si el modelo no los incluyó ---
         if "[LUGAR]" not in respuesta and not imagen_b64:
             palabras_lugar = ["recomiendo", "recomiend", "lugar", "restaurante", "taquería", "taqueria",
