@@ -575,9 +575,9 @@ def chat():
                     for nombre in lugares_encontrados:
                         tags += f'[LUGAR]{json.dumps({"nombre": nombre, "ciudad": ciudad_detectada}, ensure_ascii=False)}[/LUGAR]\n'
 
-                    # Quitar pregunta molesta de dirección
+                    # Quitar pregunta molesta de dirección/ubicación
                     respuesta = re.sub(
-                        r'\s*[¿]?(quieres|deseas|te\s+gustar[ií]a)\s+(que\s+)?(te\s+)?(d[eéi][^\n.?]{0,80})(direcci[oó]n|ubicaci[oó]n|c[oó]mo\s+llegar|indicaci[oó]n)[^\n.?]{0,40}[?]?',
+                        r'\s*[¿]?(quieres|deseas|te\s+gustar[ií]a)\s+(saber\s+)?(que\s+)?(te\s+)?(d[eéi][^\n.?]{0,80}|saber\s+)?(direcci[oó]n|ubicaci[oó]n|ubicad[oa]s?|c[oó]mo\s+llegar|indicaci[oó]n)[^\n.?]{0,40}[?]?',
                         "",
                         respuesta,
                         flags=re.IGNORECASE
