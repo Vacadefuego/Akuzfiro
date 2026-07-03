@@ -360,7 +360,7 @@ def obtener_direccion(lat, lng):
         return None
 
 
-
+def buscar_web(query, max_resultados=4):
     try:
         with DDGS() as ddgs:
             resultados = list(ddgs.text(query, max_results=max_resultados))
