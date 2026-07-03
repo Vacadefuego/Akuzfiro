@@ -124,13 +124,12 @@ LUGARES — cuando recomiendes o menciones un lugar físico (restaurante, tienda
 
 ENLACES — cuando menciones apps, sitios web, películas en streaming, productos:
 1. Incluye el enlace directo cuando lo tengas: [texto](url)
-"""
 
-IMÁGENES — cuando Gustavo diga "genera", "dibuja", "crea una imagen", "imagina", "muéstrame cómo se ve", "crea la imagen":
+IMAGENES — cuando Gustavo diga "genera", "dibuja", "crea una imagen", "imagina", "muestrame como se ve", "crea la imagen":
 1. Responde UNA línea confirmando (ej: "Aquí va.")
 2. Inmediatamente incluye este bloque — usa EXACTAMENTE estas claves en inglés:
 [IMAGEN]{"prompt":"<descripción detallada en inglés>","ancho":1024,"alto":768}[/IMAGEN]
-3. CRÍTICO: el bloque debe tener [IMAGEN] al inicio y [/IMAGEN] al final — sin excepción
+3. CRITICO: el bloque debe tener [IMAGEN] al inicio y [/IMAGEN] al final — sin excepción
 4. El prompt SIEMPRE en inglés, visual y detallado
 5. Nunca escribas el JSON fuera del bloque, nunca omitas [/IMAGEN]
 """
