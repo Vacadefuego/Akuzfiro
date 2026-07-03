@@ -533,49 +533,57 @@ def chat():
         if "[LUGAR]" not in respuesta and not imagen_b64:
             palabras_lugar = ["recomiendo", "recomiend", "lugar", "restaurante", "taquería", "taqueria",
                               "café", "cafe", "tienda", "parque", "hospital", "hotel", "bar", "cantina",
-                              "plaza", "centro", "mercado", "farmacia", "clínica", "clinica", "gym",
-                              "gimnasio", "cine", "teatro", "museo", "biblioteca", "universidad",
-                              "te sugiero", "puedes ir", "puedes visitar", "visita", "conoce"]
+                              "plaza", "mercado", "farmacia", "clínica", "clinica", "gym", "gimnasio",
+                              "cine", "teatro", "museo", "heladería", "heladeria", "panadería", "panaderia",
+                              "te sugiero", "puedes ir", "puedes visitar", "visita", "conoce", "también está",
+                              "también puedes", "otro lugar", "un lugar"]
             if any(p in respuesta.lower() for p in palabras_lugar):
-                # Pedir al modelo que extraiga los lugares mencionados
-                try:
-                    extractor_msgs = [
-                        {"role": "system", "content": (
-                            "Eres un extractor de lugares. Se te dará un texto en español. "
-                            "Identifica TODOS los nombres de lugares físicos mencionados (restaurantes, tiendas, parques, etc.). "
-                            "La ciudad de contexto es Xalapa, Veracruz, México salvo que se indique otra. "
-                            "Responde SOLO con JSON válido, sin texto extra, así:\n"
-                            '[{"nombre":"Nombre del lugar","ciudad":"Ciudad, Estado, País"}]\n'
-                            "Si no hay lugares, responde: []"
-                        )},
-                        {"role": "user", "content": respuesta[:600]}
-                    ]
-                    ext_resp = client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
-                        messages=extractor_msgs,
-                        temperature=0.0,
-                        max_tokens=300
-                    )
-                    lugares_json = ext_resp.choices[0].message.content.strip()
-                    # Limpiar posibles bloques de código markdown
-                    lugares_json = re.sub(r"```json|```", "", lugares_json).strip()
-                    lugares = json.loads(lugares_json)
-                    if isinstance(lugares, list) and len(lugares) > 0:
-                        tags = ""
-                        for l in lugares:
-                            if l.get("nombre"):
-                                tags += f'[LUGAR]{json.dumps(l, ensure_ascii=False)}[/LUGAR]\n'
-                        if tags:
-                            # Quitar la pregunta "¿Quieres que te dé la dirección?" si existe
-                            respuesta = re.sub(
-                                r"[¿?]?\s*[¿]?\s*(quieres|deseas|te\s+gustar[ií]a)\s+(que\s+)?(te\s+)?(d[eéi]|diga|comparta|mande|env[ií]e|d[eé]\s+la|explique).{0,60}(direcci[oó]n|ubicaci[oó]n|c[oó]mo\s+llegar|indicaci[oó]n).{0,30}[?]?",
-                                "",
-                                respuesta,
-                                flags=re.IGNORECASE
-                            ).strip()
-                            respuesta = respuesta + "\n" + tags
-                except Exception as ex:
-                    print(f"Error extrayendo lugares: {ex}")
+                # Extraer nombres entre comillas — ej: "Tacos El Güero", 'La Michoacana'
+                nombres_entre_comillas = re.findall(r'["\u201c\u201d\u2018\u2019\u00ab\u00bb]([^"\u201c\u201d\u2018\u2019\u00ab\u00bb]{3,60})["\u201c\u201d\u2018\u2019\u00ab\u00bb]', respuesta)
+
+                # Filtrar solo los que parecen nombres de lugares (capitalizados, no frases genéricas)
+                ignorar = {"xalapa", "veracruz", "méxico", "mexico", "la ciudad", "este lugar",
+                           "estos lugares", "un lugar", "el lugar", "la zona", "el área"}
+                lugares_encontrados = []
+                vistos = set()
+                for nombre in nombres_entre_comillas:
+                    nombre = nombre.strip()
+                    if nombre.lower() in ignorar or len(nombre) < 3:
+                        continue
+                    # Debe tener al menos una palabra capitalizada
+                    if any(w[0].isupper() for w in nombre.split() if w):
+                        key = nombre.lower()
+                        if key not in vistos:
+                            vistos.add(key)
+                            lugares_encontrados.append(nombre)
+
+                if lugares_encontrados:
+                    # Determinar ciudad — buscar ciudad mencionada en el texto
+                    ciudades_conocidas = ["xalapa", "veracruz", "cdmx", "ciudad de méxico",
+                                         "guadalajara", "monterrey", "puebla", "oaxaca"]
+                    ciudad_detectada = "Xalapa, Veracruz, México"
+                    for c in ciudades_conocidas:
+                        if c in respuesta.lower():
+                            if c == "xalapa":
+                                ciudad_detectada = "Xalapa, Veracruz, México"
+                            elif c in ("veracruz",):
+                                ciudad_detectada = "Veracruz, México"
+                            elif c in ("cdmx", "ciudad de méxico"):
+                                ciudad_detectada = "Ciudad de México, México"
+                            break
+
+                    tags = ""
+                    for nombre in lugares_encontrados:
+                        tags += f'[LUGAR]{json.dumps({"nombre": nombre, "ciudad": ciudad_detectada}, ensure_ascii=False)}[/LUGAR]\n'
+
+                    # Quitar pregunta molesta de dirección
+                    respuesta = re.sub(
+                        r'\s*[¿]?(quieres|deseas|te\s+gustar[ií]a)\s+(que\s+)?(te\s+)?(d[eéi][^\n.?]{0,80})(direcci[oó]n|ubicaci[oó]n|c[oó]mo\s+llegar|indicaci[oó]n)[^\n.?]{0,40}[?]?',
+                        "",
+                        respuesta,
+                        flags=re.IGNORECASE
+                    ).strip()
+                    respuesta = respuesta.rstrip("?¿ \n") + "\n" + tags
         # --- FIN POST-PROCESO ---
 
         guardar_conversacion(mensaje, respuesta)
