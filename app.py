@@ -331,27 +331,23 @@ def obtener_direccion(lat, lng):
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json&addressdetails=1&accept-language=es"
         headers = {"User-Agent": "Akuzfiro/1.0 (gustavo@akuzfiro.com)"}
-        with httpx.Client(timeout=5) as http:
+        with httpx.Client(timeout=3) as http:
             r = http.get(url, headers=headers)
             if r.status_code != 200:
                 return None
             data = r.json()
             addr = data.get("address", {})
             partes = []
-            # Nombre del lugar (si existe)
             nombre = data.get("name") or addr.get("amenity") or addr.get("building") or addr.get("tourism")
             if nombre:
                 partes.append(nombre)
-            # Calle y número
             calle = addr.get("road") or addr.get("pedestrian") or addr.get("footway")
             numero = addr.get("house_number", "")
             if calle:
                 partes.append(f"{calle} {numero}".strip())
-            # Colonia / barrio
             colonia = addr.get("suburb") or addr.get("neighbourhood") or addr.get("quarter")
             if colonia:
                 partes.append(colonia)
-            # Ciudad y estado
             ciudad = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("municipality")
             estado = addr.get("state")
             if ciudad:
