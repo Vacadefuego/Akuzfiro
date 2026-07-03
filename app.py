@@ -528,6 +528,56 @@ def chat():
             presence_penalty=0.1 if not imagen_b64 else 0
         )
         respuesta = response.choices[0].message.content
+
+        # --- POST-PROCESO: inyectar tags [LUGAR] si el modelo no los incluyó ---
+        if "[LUGAR]" not in respuesta and not imagen_b64:
+            palabras_lugar = ["recomiendo", "recomiend", "lugar", "restaurante", "taquería", "taqueria",
+                              "café", "cafe", "tienda", "parque", "hospital", "hotel", "bar", "cantina",
+                              "plaza", "centro", "mercado", "farmacia", "clínica", "clinica", "gym",
+                              "gimnasio", "cine", "teatro", "museo", "biblioteca", "universidad",
+                              "te sugiero", "puedes ir", "puedes visitar", "visita", "conoce"]
+            if any(p in respuesta.lower() for p in palabras_lugar):
+                # Pedir al modelo que extraiga los lugares mencionados
+                try:
+                    extractor_msgs = [
+                        {"role": "system", "content": (
+                            "Eres un extractor de lugares. Se te dará un texto en español. "
+                            "Identifica TODOS los nombres de lugares físicos mencionados (restaurantes, tiendas, parques, etc.). "
+                            "La ciudad de contexto es Xalapa, Veracruz, México salvo que se indique otra. "
+                            "Responde SOLO con JSON válido, sin texto extra, así:\n"
+                            '[{"nombre":"Nombre del lugar","ciudad":"Ciudad, Estado, País"}]\n'
+                            "Si no hay lugares, responde: []"
+                        )},
+                        {"role": "user", "content": respuesta[:600]}
+                    ]
+                    ext_resp = client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",
+                        messages=extractor_msgs,
+                        temperature=0.0,
+                        max_tokens=300
+                    )
+                    lugares_json = ext_resp.choices[0].message.content.strip()
+                    # Limpiar posibles bloques de código markdown
+                    lugares_json = re.sub(r"```json|```", "", lugares_json).strip()
+                    lugares = json.loads(lugares_json)
+                    if isinstance(lugares, list) and len(lugares) > 0:
+                        tags = ""
+                        for l in lugares:
+                            if l.get("nombre"):
+                                tags += f'[LUGAR]{json.dumps(l, ensure_ascii=False)}[/LUGAR]\n'
+                        if tags:
+                            # Quitar la pregunta "¿Quieres que te dé la dirección?" si existe
+                            respuesta = re.sub(
+                                r"[¿?]?\s*[¿]?\s*(quieres|deseas|te\s+gustar[ií]a)\s+(que\s+)?(te\s+)?(d[eéi]|diga|comparta|mande|env[ií]e|d[eé]\s+la|explique).{0,60}(direcci[oó]n|ubicaci[oó]n|c[oó]mo\s+llegar|indicaci[oó]n).{0,30}[?]?",
+                                "",
+                                respuesta,
+                                flags=re.IGNORECASE
+                            ).strip()
+                            respuesta = respuesta + "\n" + tags
+                except Exception as ex:
+                    print(f"Error extrayendo lugares: {ex}")
+        # --- FIN POST-PROCESO ---
+
         guardar_conversacion(mensaje, respuesta)
 
         try:
