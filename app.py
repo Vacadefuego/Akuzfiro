@@ -297,40 +297,10 @@ Hechos importantes:"""
         print(f"Error extrayendo hechos: {e}")
 
 
-def obtener_clima():
-    """Obtiene el clima actual de Xalapa usando Open-Meteo (gratis, sin API key)."""
+def obtener_clima(lat=19.5438, lng=-96.9102):
+    """Obtiene el clima actual via Open-Meteo (gratis, sin API key)."""
     try:
-        url = "https://api.open-meteo.com/v1/forecast?latitude=19.5438&longitude=-96.9102&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=America%2FMexico_City&forecast_days=1"
-        with httpx.Client(timeout=5) as http:
-            r = http.get(url)
-            if r.status_code != 200:
-                return None
-            data = r.json()
-            current = data.get("current", {})
-            temp = current.get("temperature_2m")
-            humidity = current.get("relative_humidity_2m")
-            wind = current.get("wind_speed_10m")
-            code = current.get("weather_code", 0)
-
-            # Traducir código de clima
-            if code == 0: desc = "despejado"
-            elif code in [1, 2, 3]: desc = "parcialmente nublado"
-            elif code in [45, 48]: desc = "neblina"
-            elif code in [51, 53, 55]: desc = "llovizna"
-            elif code in [61, 63, 65]: desc = "lluvia"
-            elif code in [71, 73, 75]: desc = "nieve"
-            elif code in [80, 81, 82]: desc = "chubascos"
-            elif code in [95, 96, 99]: desc = "tormenta eléctrica"
-            else: desc = "condiciones variables"
-
-            return f"{desc}, {temp}°C, humedad {humidity}%, viento {wind} km/h"
-    except Exception:
-        return None
-# --- CLIMA ---
-def obtener_clima():
-    """Obtiene el clima actual de Xalapa, Veracruz via Open-Meteo (gratis, sin API key)."""
-    try:
-        url = "https://api.open-meteo.com/v1/forecast?latitude=19.5438&longitude=-96.9102&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=America%2FMexico_City&forecast_days=1"
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=America%2FMexico_City&forecast_days=1"
         with httpx.Client(timeout=5) as http:
             r = http.get(url)
             if r.status_code != 200:
@@ -351,12 +321,50 @@ def obtener_clima():
                 95: "tormenta", 96: "tormenta con granizo", 99: "tormenta fuerte"
             }
             desc = descripciones.get(codigo, "variable")
-            return f"Clima en Xalapa ahora: {temp}°C, {desc}, humedad {humedad}%, viento {viento} km/h"
+            return f"{temp}°C, {desc}, humedad {humedad}%, viento {viento} km/h"
     except Exception:
         return None
 
 
-def buscar_web(query, max_resultados=4):
+def obtener_direccion(lat, lng):
+    """Convierte coordenadas a dirección legible usando Nominatim (OpenStreetMap, gratis)."""
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json&addressdetails=1&accept-language=es"
+        headers = {"User-Agent": "Akuzfiro/1.0 (gustavo@akuzfiro.com)"}
+        with httpx.Client(timeout=5) as http:
+            r = http.get(url, headers=headers)
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            addr = data.get("address", {})
+            partes = []
+            # Nombre del lugar (si existe)
+            nombre = data.get("name") or addr.get("amenity") or addr.get("building") or addr.get("tourism")
+            if nombre:
+                partes.append(nombre)
+            # Calle y número
+            calle = addr.get("road") or addr.get("pedestrian") or addr.get("footway")
+            numero = addr.get("house_number", "")
+            if calle:
+                partes.append(f"{calle} {numero}".strip())
+            # Colonia / barrio
+            colonia = addr.get("suburb") or addr.get("neighbourhood") or addr.get("quarter")
+            if colonia:
+                partes.append(colonia)
+            # Ciudad y estado
+            ciudad = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("municipality")
+            estado = addr.get("state")
+            if ciudad:
+                partes.append(ciudad)
+            if estado:
+                partes.append(estado)
+            return ", ".join(partes) if partes else data.get("display_name", "")
+    except Exception as e:
+        print(f"Error geocodificando: {e}")
+        return None
+
+
+
     try:
         with DDGS() as ddgs:
             resultados = list(ddgs.text(query, max_results=max_resultados))
@@ -432,8 +440,9 @@ def chat():
     data = request.json
     mensaje = data.get("mensaje", "") or ""
     con_voz = data.get("voz", False)
-    imagen_b64 = data.get("imagen", None)   # base64 de la imagen (opcional)
-    imagen_mime = data.get("mime", "image/jpeg")  # tipo MIME
+    imagen_b64 = data.get("imagen", None)
+    imagen_mime = data.get("mime", "image/jpeg")
+    ubicacion = data.get("ubicacion", None)  # {"lat": float, "lng": float}
 
     # Si hay imagen, el mensaje puede ser vacío (solo foto) o tener texto
     if not mensaje and not imagen_b64:
@@ -446,10 +455,32 @@ def chat():
     tz_mexico = pytz.timezone("America/Mexico_City")
     ahora = datetime.now(tz_mexico).strftime("%A %d de %B de %Y, %H:%M hrs")
 
-    clima = obtener_clima()
-    info_contexto = f"FECHA Y HORA: {ahora} (Xalapa, Veracruz, México)"
+    # Obtener clima con coordenadas reales del usuario si las mandó
+    if ubicacion and isinstance(ubicacion, dict) and ubicacion.get("lat"):
+        clima = obtener_clima(ubicacion["lat"], ubicacion["lng"])
+    else:
+        clima = obtener_clima()
+
+    info_contexto = f"FECHA Y HORA: {ahora} (México)"
     if clima:
-        info_contexto += f"\nCLIMA ACTUAL EN XALAPA: {clima}"
+        info_contexto += f"\nCLIMA ACTUAL (en tu ubicación): {clima}"
+
+    # Ubicación del usuario si la mandó el frontend
+    info_ubicacion = None
+    if ubicacion and isinstance(ubicacion, dict):
+        lat = ubicacion.get("lat")
+        lng = ubicacion.get("lng")
+        if lat and lng:
+            direccion = obtener_direccion(lat, lng)
+            if direccion:
+                info_ubicacion = f"UBICACIÓN ACTUAL DE GUSTAVO: {direccion} (coordenadas: {lat:.5f}, {lng:.5f})"
+            else:
+                info_ubicacion = f"UBICACIÓN ACTUAL DE GUSTAVO: coordenadas {lat:.5f}, {lng:.5f}"
+            info_contexto += f"\n{info_ubicacion}"
+
+            # Si pide clima, obtenerlo para su ubicación real
+            if not clima:
+                info_contexto += f"\n(Usar coordenadas {lat},{lng} para clima si se pregunta)"
     hechos = cargar_hechos()
     conversaciones = cargar_conversaciones(10)
 
