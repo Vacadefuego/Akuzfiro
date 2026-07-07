@@ -389,7 +389,13 @@ def necesita_busqueda(mensaje):
         "quién ganó", "quien gano", "campeón", "campeon",
         "mundial", "olimpiadas", "torneo", "liga",
         "últimas noticias", "breaking", "aconteció", "ocurrió",
-        "verifica", "corrobora", "confirma", "es verdad", "es cierto"
+        "verifica", "corrobora", "confirma", "es verdad", "es cierto",
+        "cómo le fue", "como le fue", "cómo van", "como van",
+        "cómo quedó", "como quedo", "cómo salió", "como salio",
+        "ganó", "gano", "perdió", "perdio", "empató", "empato",
+        "selección", "seleccion", "equipo", "jugó", "jugo",
+        "eliminaron", "clasificó", "clasifica", "avanzó", "avanzo",
+        "copa", "champions", "euro", "conmebol", "concacaf", "fifamundial"
     ]
     return any(p in mensaje.lower() for p in palabras)
 
