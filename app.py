@@ -243,6 +243,52 @@ def init_db():
             categoria TEXT DEFAULT 'general'
         )
     """)
+    conn.run("""
+        CREATE TABLE IF NOT EXISTS ganancias (
+            id SERIAL PRIMARY KEY,
+            fecha TIMESTAMP DEFAULT NOW(),
+            descripcion TEXT NOT NULL,
+            monto NUMERIC(10,2) NOT NULL,
+            categoria TEXT DEFAULT 'otro'
+        )
+    """)
+    conn.run("""
+        CREATE TABLE IF NOT EXISTS ventas (
+            id SERIAL PRIMARY KEY,
+            fecha TIMESTAMP DEFAULT NOW(),
+            descripcion TEXT NOT NULL,
+            monto NUMERIC(10,2) NOT NULL
+        )
+    """)
+    conn.run("""
+        CREATE TABLE IF NOT EXISTS prestamos (
+            id SERIAL PRIMARY KEY,
+            fecha TIMESTAMP DEFAULT NOW(),
+            tipo TEXT NOT NULL,
+            persona TEXT NOT NULL,
+            monto NUMERIC(10,2) NOT NULL,
+            descripcion TEXT DEFAULT '',
+            saldado BOOLEAN DEFAULT FALSE
+        )
+    """)
+    conn.run("""
+        CREATE TABLE IF NOT EXISTS empenos (
+            id SERIAL PRIMARY KEY,
+            fecha TIMESTAMP DEFAULT NOW(),
+            descripcion TEXT NOT NULL,
+            monto NUMERIC(10,2) NOT NULL,
+            lugar TEXT DEFAULT '',
+            recuperado BOOLEAN DEFAULT FALSE
+        )
+    """)
+    conn.run("""
+        CREATE TABLE IF NOT EXISTS lista_compras (
+            id SERIAL PRIMARY KEY,
+            fecha TIMESTAMP DEFAULT NOW(),
+            item TEXT NOT NULL,
+            comprado BOOLEAN DEFAULT FALSE
+        )
+    """)
     conn.close()
 
 def cargar_conversaciones(limit=10):
@@ -951,6 +997,166 @@ def eliminar_gasto(gasto_id):
         conn.run("DELETE FROM gastos WHERE id = :id", id=gasto_id)
         conn.close()
         return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --- GANANCIAS ---
+@app.route("/ganancias", methods=["POST"])
+def agregar_ganancia():
+    try:
+        data = request.json
+        descripcion = data.get("descripcion", "").strip()
+        monto = float(data.get("monto", 0))
+        categoria = data.get("categoria", "otro").strip()
+        if not descripcion or monto <= 0:
+            return jsonify({"error": "Datos inválidos"}), 400
+        conn = get_conn()
+        conn.run("INSERT INTO ganancias (descripcion, monto, categoria) VALUES (:d, :m, :c)",
+                 d=descripcion, m=monto, c=categoria)
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/ganancias", methods=["GET"])
+def ver_ganancias():
+    try:
+        conn = get_conn()
+        rows = conn.run("SELECT id, fecha, descripcion, monto, categoria FROM ganancias ORDER BY fecha DESC LIMIT 50")
+        conn.close()
+        return jsonify([{"id": r[0], "fecha": str(r[1])[:16], "descripcion": r[2], "monto": float(r[3]), "categoria": r[4]} for r in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --- VENTAS ---
+@app.route("/ventas", methods=["POST"])
+def agregar_venta():
+    try:
+        data = request.json
+        descripcion = data.get("descripcion", "").strip()
+        monto = float(data.get("monto", 0))
+        if not descripcion or monto <= 0:
+            return jsonify({"error": "Datos inválidos"}), 400
+        conn = get_conn()
+        conn.run("INSERT INTO ventas (descripcion, monto) VALUES (:d, :m)", d=descripcion, m=monto)
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --- PRÉSTAMOS ---
+@app.route("/prestamos", methods=["POST"])
+def agregar_prestamo():
+    try:
+        data = request.json
+        tipo = data.get("tipo", "dado")  # "dado" o "recibido"
+        persona = data.get("persona", "").strip()
+        monto = float(data.get("monto", 0))
+        descripcion = data.get("descripcion", "").strip()
+        if not persona or monto <= 0:
+            return jsonify({"error": "Datos inválidos"}), 400
+        conn = get_conn()
+        conn.run("INSERT INTO prestamos (tipo, persona, monto, descripcion) VALUES (:t, :p, :m, :d)",
+                 t=tipo, p=persona, m=monto, d=descripcion)
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/prestamos", methods=["GET"])
+def ver_prestamos():
+    try:
+        conn = get_conn()
+        rows = conn.run("SELECT id, fecha, tipo, persona, monto, descripcion, saldado FROM prestamos ORDER BY fecha DESC LIMIT 50")
+        conn.close()
+        return jsonify([{"id": r[0], "fecha": str(r[1])[:16], "tipo": r[2], "persona": r[3], "monto": float(r[4]), "descripcion": r[5], "saldado": r[6]} for r in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --- EMPEÑOS ---
+@app.route("/empenos", methods=["POST"])
+def agregar_empeno():
+    try:
+        data = request.json
+        descripcion = data.get("descripcion", "").strip()
+        monto = float(data.get("monto", 0))
+        lugar = data.get("lugar", "").strip()
+        if not descripcion:
+            return jsonify({"error": "Datos inválidos"}), 400
+        conn = get_conn()
+        conn.run("INSERT INTO empenos (descripcion, monto, lugar) VALUES (:d, :m, :l)",
+                 d=descripcion, m=monto, l=lugar)
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --- LISTA DE COMPRAS ---
+@app.route("/lista-compras", methods=["POST"])
+def agregar_lista_compras():
+    try:
+        data = request.json
+        items = data.get("items", [])
+        if not items:
+            return jsonify({"error": "Lista vacía"}), 400
+        conn = get_conn()
+        for item in items:
+            if item.strip():
+                conn.run("INSERT INTO lista_compras (item) VALUES (:i)", i=item.strip())
+        conn.close()
+        return jsonify({"ok": True, "agregados": len(items)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/lista-compras", methods=["GET"])
+def ver_lista_compras():
+    try:
+        conn = get_conn()
+        rows = conn.run("SELECT id, item, comprado, fecha FROM lista_compras WHERE comprado = FALSE ORDER BY fecha DESC")
+        conn.close()
+        return jsonify([{"id": r[0], "item": r[1], "comprado": r[2]} for r in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/lista-compras/<int:item_id>/comprado", methods=["POST"])
+def marcar_comprado(item_id):
+    try:
+        conn = get_conn()
+        conn.run("UPDATE lista_compras SET comprado = TRUE WHERE id = :id", id=item_id)
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --- RESUMEN FINANCIERO ---
+@app.route("/finanzas/resumen", methods=["GET"])
+def resumen_finanzas():
+    try:
+        conn = get_conn()
+        gastos = conn.run("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE fecha >= date_trunc('month', NOW())")[0][0]
+        ganancias = conn.run("SELECT COALESCE(SUM(monto),0) FROM ganancias WHERE fecha >= date_trunc('month', NOW())")[0][0]
+        ventas = conn.run("SELECT COALESCE(SUM(monto),0) FROM ventas WHERE fecha >= date_trunc('month', NOW())")[0][0]
+        prestamos_dados = conn.run("SELECT COALESCE(SUM(monto),0) FROM prestamos WHERE tipo='dado' AND saldado=FALSE")[0][0]
+        prestamos_recibidos = conn.run("SELECT COALESCE(SUM(monto),0) FROM prestamos WHERE tipo='recibido' AND saldado=FALSE")[0][0]
+        empenos = conn.run("SELECT COALESCE(SUM(monto),0) FROM empenos WHERE recuperado=FALSE")[0][0]
+        compras_pendientes = conn.run("SELECT COUNT(*) FROM lista_compras WHERE comprado=FALSE")[0][0]
+        conn.close()
+        return jsonify({
+            "gastos_mes": float(gastos),
+            "ganancias_mes": float(ganancias),
+            "ventas_mes": float(ventas),
+            "balance_mes": float(ganancias) + float(ventas) - float(gastos),
+            "prestamos_dados": float(prestamos_dados),
+            "prestamos_recibidos": float(prestamos_recibidos),
+            "empenos_activos": float(empenos),
+            "compras_pendientes": int(compras_pendientes)
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
