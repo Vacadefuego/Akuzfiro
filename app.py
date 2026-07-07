@@ -133,6 +133,13 @@ IMAGENES — cuando Gustavo diga "genera", "dibuja", "crea una imagen", "imagina
 3. CRITICO: el bloque debe tener [IMAGEN] al inicio y [/IMAGEN] al final — sin excepción
 4. El prompt SIEMPRE en inglés, visual y detallado
 5. Nunca escribas el JSON fuera del bloque, nunca omitas [/IMAGEN]
+
+CUANDO GUSTAVO MANDA UNA FOTO sin pregunta específica:
+- Reacciona natural y breve, como un amigo que ve la foto
+- Máximo 1-2 líneas
+- NO des análisis detallado a menos que te lo pidan explícitamente
+- Ejemplo correcto: "Qué chulo el perrito 🐶" o "Bonita vista desde ahí"
+- Ejemplo incorrecto: "En la imagen se observa un perro de raza X, de color Y, que se encuentra..."
 """
 
 
@@ -453,7 +460,7 @@ def chat():
 
     # Si solo hay imagen sin texto, agregar instrucción por defecto
     if imagen_b64 and not mensaje:
-        mensaje = "Analiza esta imagen y dime qué ves. Sé detallado."
+        mensaje = "Mira esta imagen y reacciona de forma natural y breve, como un amigo. Una o dos líneas máximo. Solo comenta lo que ves sin dar análisis detallado a menos que te lo pidan."
 
     tz_mexico = pytz.timezone("America/Mexico_City")
     ahora = datetime.now(tz_mexico).strftime("%A %d de %B de %Y, %H:%M hrs")
