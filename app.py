@@ -107,11 +107,44 @@ RECORDATORIOS — cuando Gustavo diga algo como "avísame a las X", "recuérdame
 3. Solo incluye el bloque, el frontend hace el resto automáticamente
 4. Si Gustavo pregunta "¿qué recordatorios tengo?", dile que los puede ver en el menú ☰ → Recordatorios
 
-GASTOS — cuando Gustavo diga algo como "gasté X en Y", "pagué X de Y", "compré Y por X", "anota X pesos de Y":
-1. Confirma brevemente (ej: "Anotado. 200 en gasolina.")
-2. Al final incluye este bloque exacto:
-[GASTO]{"descripcion":"<qué compró>","monto":<número sin signos>,"categoria":"<comida|transporte|salud|entretenimiento|ropa|servicios|general>"}[/GASTO]
-3. Si Gustavo pregunta "¿cuánto he gastado?" o "¿en qué va el mes?", dile que lo puede ver en el menú ☰ → Gastos del mes
+FINANZAS PERSONALES — registra todos los movimientos de dinero de Gustavo:
+
+GASTOS — cuando diga "gasté X en Y", "pagué X de Y", "compré Y por X", "anota X pesos de Y":
+1. Confirma brevemente (ej: "Anotado. 50 pesos en anticongelante.")
+2. Al final incluye:
+[GASTO]{"descripcion":"<qué compró>","monto":<número>,"categoria":"<comida|transporte|salud|entretenimiento|ropa|servicios|hogar|general>"}[/GASTO]
+
+GANANCIAS — cuando diga "gané X", "me pagaron X", "cobré X", "entró X":
+1. Confirma brevemente (ej: "Anotado. Ganaste 500 pesos.")
+2. Al final incluye:
+[GANANCIA]{"descripcion":"<de dónde>","monto":<número>,"categoria":"<trabajo|venta|freelance|regalo|otro>"}[/GANANCIA]
+
+VENTAS — cuando diga "vendí X en Y", "me compraron X por Y":
+1. Confirma brevemente
+2. Al final incluye:
+[VENTA]{"descripcion":"<qué vendió>","monto":<número>}[/VENTA]
+
+PRÉSTAMOS DADOS — cuando diga "le presté X a Y", "le di X a Y prestado":
+1. Confirma (ej: "Anotado. Le prestaste 200 a Juan.")
+2. Al final incluye:
+[PRESTAMO_DADO]{"persona":"<nombre>","monto":<número>,"descripcion":"<contexto>"}[/PRESTAMO_DADO]
+
+PRÉSTAMOS RECIBIDOS — cuando diga "me prestaron X", "le debo X a Y":
+1. Confirma
+2. Al final incluye:
+[PRESTAMO_RECIBIDO]{"persona":"<nombre>","monto":<número>,"descripcion":"<contexto>"}[/PRESTAMO_RECIBIDO]
+
+EMPEÑOS — cuando diga "empeñé X en Y", "dejé X de prenda":
+1. Confirma
+2. Al final incluye:
+[EMPENO]{"descripcion":"<qué empeñó>","monto":<número>,"lugar":"<dónde>"}[/EMPENO]
+
+LISTA DE COMPRAS — cuando diga "necesito comprar X, Y, Z" o "agrégale X a mi lista":
+1. Confirma
+2. Al final incluye:
+[LISTA_COMPRAS]{"items":["<item1>","<item2>"]}[/LISTA_COMPRAS]
+
+Si Gustavo pregunta "¿cuánto he gastado?" o "¿cómo van mis finanzas?", dile que lo puede ver en el menú ☰ → Finanzas.
 
 LUGARES — cuando recomiendes o menciones un lugar físico (restaurante, tienda, parque, hospital, etc.):
 1. Menciona el lugar normalmente en el texto
@@ -613,13 +646,19 @@ def chat():
 
         # --- POST-PROCESO: inyectar tags [LUGAR] si el modelo no los incluyó ---
         if "[LUGAR]" not in respuesta and not imagen_b64:
+            # No inyectar GPS si la respuesta es sobre un gasto/compra/producto
+            palabras_gasto = ["anotado", "compraste", "gastaste", "pagaste", "compra",
+                              "gasto", "precio", "pesos", "moneda", "costo", "vale",
+                              "empeño", "préstamo", "prestamo", "ganancia", "venta"]
+            es_respuesta_gasto = any(p in respuesta.lower() for p in palabras_gasto)
+
             palabras_lugar = ["recomiendo", "recomiend", "lugar", "restaurante", "taquería", "taqueria",
-                              "café", "cafe", "tienda", "parque", "hospital", "hotel", "bar", "cantina",
+                              "café", "cafe", "parque", "hospital", "hotel", "bar", "cantina",
                               "plaza", "mercado", "farmacia", "clínica", "clinica", "gym", "gimnasio",
                               "cine", "teatro", "museo", "heladería", "heladeria", "panadería", "panaderia",
                               "te sugiero", "puedes ir", "puedes visitar", "visita", "conoce", "también está",
                               "también puedes", "otro lugar", "un lugar"]
-            if any(p in respuesta.lower() for p in palabras_lugar):
+            if not es_respuesta_gasto and any(p in respuesta.lower() for p in palabras_lugar):
                 # Extraer nombres entre comillas — ej: "Tacos El Güero", 'La Michoacana'
                 nombres_entre_comillas = re.findall(r'["\u201c\u201d\u2018\u2019\u00ab\u00bb]([^"\u201c\u201d\u2018\u2019\u00ab\u00bb]{3,60})["\u201c\u201d\u2018\u2019\u00ab\u00bb]', respuesta)
 
