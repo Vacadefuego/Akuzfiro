@@ -402,9 +402,13 @@ Hechos importantes:"""
 
 
 def obtener_clima(lat=19.5438, lng=-96.9102):
-    """Obtiene el clima actual via Open-Meteo (gratis, sin API key)."""
+    """Obtiene clima actual y pronóstico 3 días via Open-Meteo (gratis)."""
     try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=America%2FMexico_City&forecast_days=1"
+        url = (f"https://api.open-meteo.com/v1/forecast"
+               f"?latitude={lat}&longitude={lng}"
+               f"&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m"
+               f"&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+               f"&timezone=America%2FMexico_City&forecast_days=4")
         with httpx.Client(timeout=5) as http:
             r = http.get(url)
             if r.status_code != 200:
@@ -425,7 +429,30 @@ def obtener_clima(lat=19.5438, lng=-96.9102):
                 95: "tormenta", 96: "tormenta con granizo", 99: "tormenta fuerte"
             }
             desc = descripciones.get(codigo, "variable")
-            return f"{temp}°C, {desc}, humedad {humedad}%, viento {viento} km/h"
+            resumen = f"{temp}°C, {desc}, humedad {humedad}%, viento {viento} km/h"
+
+            # Pronóstico próximos 3 días
+            daily = data.get("daily", {})
+            fechas = daily.get("time", [])
+            codigos_d = daily.get("weather_code", [])
+            maxs = daily.get("temperature_2m_max", [])
+            mins = daily.get("temperature_2m_min", [])
+            lluvia_prob = daily.get("precipitation_probability_max", [])
+            dias_semana = ["lunes","martes","miércoles","jueves","viernes","sábado","domingo"]
+            pronostico = []
+            for i in range(1, min(4, len(fechas))):
+                try:
+                    from datetime import date as dt_date
+                    d = dt_date.fromisoformat(fechas[i])
+                    dia_nombre = dias_semana[d.weekday()]
+                    desc_d = descripciones.get(codigos_d[i] if i < len(codigos_d) else 0, "variable")
+                    prob = lluvia_prob[i] if i < len(lluvia_prob) else 0
+                    pronostico.append(f"{dia_nombre}: {mins[i]:.0f}-{maxs[i]:.0f}°C, {desc_d}, lluvia {prob}%")
+                except Exception:
+                    pass
+            if pronostico:
+                resumen += " | Próximos días: " + " / ".join(pronostico)
+            return resumen
     except Exception:
         return None
 
