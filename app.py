@@ -139,8 +139,13 @@ EMPEÑOS — cuando diga "empeñé X en Y", "dejé X de prenda":
 2. Al final incluye:
 [EMPENO]{"descripcion":"<qué empeñó>","monto":<número>,"lugar":"<dónde>"}[/EMPENO]
 
-BITÁCORA — cuando Gustavo diga "anota que hice X", "registra que hoy X", "apunta que X", "recuérdame hacer X cada N días/semanas":
-1. Confirma brevemente (ej: "Anotado. Anticongelante al auto hoy.")
+RECORDATORIOS POR UBICACIÓN — cuando Gustavo diga "cuando llegue a X recuérdame Y", "al llegar a X avísame Y", "cuando esté en X dime Y":
+1. Confirma (ej: "Listo, cuando llegues al Oxxo te recuerdo comprar agua.")
+2. Al final incluye:
+[REC_UBICACION]{"lugar":"<nombre del lugar>","ciudad":"Xalapa, Veracruz, México","mensaje":"<qué recordar>"}[/REC_UBICACION]
+3. El frontend geocodifica el lugar y activa el monitoreo automáticamente.
+
+BITÁCORA — cuando Gustavo diga "anota que hice X", "registra que hoy X", "apunta que X", "recuérdame hacer X cada N días/semanas":1. Confirma brevemente (ej: "Anotado. Anticongelante al auto hoy.")
 2. Al final incluye:
 [BITACORA]{"descripcion":"<qué hizo>","categoria":"<auto|salud|hogar|trabajo|personal|general>","intervalo_dias":<número o null si no aplica>}[/BITACORA]
 3. Si Gustavo pregunta "¿cuándo fue la última vez que X?" o "¿cuándo toca X?", búscalo en la bitácora y responde natural.
