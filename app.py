@@ -139,7 +139,14 @@ EMPEÑOS — cuando diga "empeñé X en Y", "dejé X de prenda":
 2. Al final incluye:
 [EMPENO]{"descripcion":"<qué empeñó>","monto":<número>,"lugar":"<dónde>"}[/EMPENO]
 
-LISTA DE COMPRAS — cuando diga "necesito comprar X, Y, Z" o "agrégale X a mi lista":
+BITÁCORA — cuando Gustavo diga "anota que hice X", "registra que hoy X", "apunta que X", "recuérdame hacer X cada N días/semanas":
+1. Confirma brevemente (ej: "Anotado. Anticongelante al auto hoy.")
+2. Al final incluye:
+[BITACORA]{"descripcion":"<qué hizo>","categoria":"<auto|salud|hogar|trabajo|personal|general>","intervalo_dias":<número o null si no aplica>}[/BITACORA]
+3. Si Gustavo pregunta "¿cuándo fue la última vez que X?" o "¿cuándo toca X?", búscalo en la bitácora y responde natural.
+4. Ejemplos: "anota que puse anticongelante hoy" → intervalo_dias: 14 si dijo "cada 2 semanas", null si no especificó.
+
+
 1. Confirma
 2. Al final incluye:
 [LISTA_COMPRAS]{"items":["<item1>","<item2>"]}[/LISTA_COMPRAS]
@@ -279,6 +286,16 @@ def init_db():
             monto NUMERIC(10,2) NOT NULL,
             lugar TEXT DEFAULT '',
             recuperado BOOLEAN DEFAULT FALSE
+        )
+    """)
+    conn.run("""
+        CREATE TABLE IF NOT EXISTS bitacora (
+            id SERIAL PRIMARY KEY,
+            fecha TIMESTAMP DEFAULT NOW(),
+            descripcion TEXT NOT NULL,
+            categoria TEXT DEFAULT 'general',
+            proxima_fecha TIMESTAMP,
+            intervalo_dias INTEGER
         )
     """)
     conn.run("""
@@ -1130,6 +1147,79 @@ def marcar_comprado(item_id):
         conn.run("UPDATE lista_compras SET comprado = TRUE WHERE id = :id", id=item_id)
         conn.close()
         return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --- BITÁCORA ---
+@app.route("/bitacora", methods=["POST"])
+def agregar_bitacora():
+    try:
+        data = request.json
+        descripcion = data.get("descripcion", "").strip()
+        categoria = data.get("categoria", "general").strip()
+        intervalo_dias = data.get("intervalo_dias", None)
+        if not descripcion:
+            return jsonify({"error": "Descripción vacía"}), 400
+        tz_mexico = pytz.timezone("America/Mexico_City")
+        ahora = datetime.now(tz_mexico)
+        proxima = None
+        if intervalo_dias:
+            from datetime import timedelta
+            proxima = ahora + timedelta(days=int(intervalo_dias))
+        conn = get_conn()
+        conn.run(
+            "INSERT INTO bitacora (descripcion, categoria, proxima_fecha, intervalo_dias) VALUES (:d, :c, :p, :i)",
+            d=descripcion, c=categoria,
+            p=proxima.replace(tzinfo=None) if proxima else None,
+            i=int(intervalo_dias) if intervalo_dias else None
+        )
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/bitacora", methods=["GET"])
+def ver_bitacora():
+    try:
+        conn = get_conn()
+        rows = conn.run("""
+            SELECT id, fecha, descripcion, categoria, proxima_fecha, intervalo_dias
+            FROM bitacora ORDER BY fecha DESC LIMIT 100
+        """)
+        conn.close()
+        result = []
+        for r in rows:
+            result.append({
+                "id": r[0], "fecha": str(r[1])[:16],
+                "descripcion": r[2], "categoria": r[3],
+                "proxima_fecha": str(r[4])[:16] if r[4] else None,
+                "intervalo_dias": r[5]
+            })
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/bitacora/proximas", methods=["GET"])
+def bitacora_proximas():
+    """Entradas de bitácora cuya próxima fecha ya llegó o está próxima (3 días)."""
+    try:
+        from datetime import timedelta
+        tz_mexico = pytz.timezone("America/Mexico_City")
+        ahora = datetime.now(tz_mexico).replace(tzinfo=None)
+        pronto = ahora + timedelta(days=3)
+        conn = get_conn()
+        rows = conn.run("""
+            SELECT id, descripcion, categoria, proxima_fecha
+            FROM bitacora
+            WHERE proxima_fecha IS NOT NULL AND proxima_fecha <= :pronto
+            ORDER BY proxima_fecha ASC
+        """, pronto=pronto)
+        conn.close()
+        return jsonify([{
+            "id": r[0], "descripcion": r[1],
+            "categoria": r[2], "proxima_fecha": str(r[3])[:16]
+        } for r in rows])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
