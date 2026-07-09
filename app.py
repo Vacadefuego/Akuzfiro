@@ -582,16 +582,37 @@ def texto_a_voz(texto):
 # --- PUSH NOTIFICATIONS ---
 @app.route("/push-test", methods=["POST"])
 def test_push():
-    """Manda push de prueba a todos los tokens registrados."""
+    """Manda push de prueba a todos los tokens y devuelve respuesta completa de Expo."""
     try:
         conn = get_conn()
-        tokens = conn.run("SELECT token FROM push_tokens")
+        tokens = conn.run("SELECT token, actualizado FROM push_tokens")
         conn.close()
         resultados = []
         for tok in tokens:
-            ok = enviar_push(tok[0], "🔔 Prueba Akuzfiro", "Si ves esto, los push funcionan ✅")
-            resultados.append({"token": tok[0][:20] + "...", "ok": ok})
-        return jsonify({"enviados": len(resultados), "resultados": resultados})
+            token_val = tok[0]
+            actualizado = str(tok[1])
+            # Llamar Expo y obtener respuesta completa
+            try:
+                payload = {
+                    "to": token_val,
+                    "title": "🔔 Prueba Akuzfiro",
+                    "body": "Si ves esto, los push funcionan ✅",
+                    "sound": "default",
+                    "priority": "high",
+                }
+                with httpx.Client(timeout=10) as http:
+                    r = http.post("https://exp.host/--/api/v2/push/send", json=payload)
+                    expo_resp = r.json()
+            except Exception as ex:
+                expo_resp = {"error": str(ex)}
+            resultados.append({
+                "token_inicio": token_val[:30],
+                "token_valido": token_val.startswith("ExponentPushToken["),
+                "actualizado": actualizado,
+                "expo_status": expo_resp.get("data", {}).get("status") if "data" in expo_resp else expo_resp,
+                "expo_details": expo_resp.get("data", {}).get("details") if "data" in expo_resp else None,
+            })
+        return jsonify({"total_tokens": len(resultados), "resultados": resultados})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
