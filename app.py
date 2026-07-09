@@ -1397,6 +1397,46 @@ Reglas:
         return jsonify({"error": str(e)}), 500
 
 
+# Cache temporal para descargas (en memoria, se limpia al reiniciar)
+_download_cache = {}
+
+@app.route("/preparar-descarga", methods=["POST"])
+def preparar_descarga():
+    """Guarda el payload en cache y devuelve un token para descarga GET."""
+    import uuid
+    data = request.json
+    tipo = data.get("tipo", "word")
+    payload = data.get("payload", {})
+    token = str(uuid.uuid4())[:8]
+    _download_cache[token] = {"tipo": tipo, "payload": payload}
+    return jsonify({"token": token, "url": f"/descargar/{token}"})
+
+@app.route("/descargar/<token>", methods=["GET"])
+def descargar_archivo(token):
+    """Descarga el archivo usando el token generado."""
+    if token not in _download_cache:
+        return jsonify({"error": "Token inválido o expirado"}), 404
+    item = _download_cache.pop(token)
+    tipo = item["tipo"]
+    payload = item["payload"]
+    # Redirigir al generador correspondiente
+    from flask import make_response
+    if tipo == "word":
+        with app.test_request_context(json=payload):
+            resp = generar_word()
+            return resp
+    elif tipo == "excel":
+        with app.test_request_context(json=payload):
+            return generar_excel()
+    elif tipo == "pdf":
+        with app.test_request_context(json=payload):
+            return generar_pdf()
+    elif tipo == "pptx":
+        with app.test_request_context(json=payload):
+            return generar_pptx()
+    return jsonify({"error": "Tipo no soportado"}), 400
+
+
 @app.route("/generar-word", methods=["POST"])
 def generar_word():
     try:
