@@ -580,6 +580,21 @@ def texto_a_voz(texto):
 
 
 # --- PUSH NOTIFICATIONS ---
+@app.route("/push-test", methods=["POST"])
+def test_push():
+    """Manda push de prueba a todos los tokens registrados."""
+    try:
+        conn = get_conn()
+        tokens = conn.run("SELECT token FROM push_tokens")
+        conn.close()
+        resultados = []
+        for tok in tokens:
+            ok = enviar_push(tok[0], "🔔 Prueba Akuzfiro", "Si ves esto, los push funcionan ✅")
+            resultados.append({"token": tok[0][:20] + "...", "ok": ok})
+        return jsonify({"enviados": len(resultados), "resultados": resultados})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/push-token", methods=["POST"])
 def guardar_push_token():
     try:
