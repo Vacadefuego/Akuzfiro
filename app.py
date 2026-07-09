@@ -1505,6 +1505,39 @@ Reglas:
         # Limpiar si viene con backticks
         resultado = resultado.replace("```json", "").replace("```", "").strip()
         parsed = json.loads(resultado)
+
+        # Guardar automáticamente en la BD y programar push
+        hora_aviso = parsed.get("hora_aviso")
+        mensaje = parsed.get("mensaje", frase)
+        if hora_aviso and mensaje:
+            conn = get_conn()
+            conn.run(
+                "INSERT INTO recordatorios (hora_aviso, mensaje) VALUES (:h, :m)",
+                h=hora_aviso, m=mensaje
+            )
+            conn.close()
+            # Programar push con Timer
+            try:
+                ahora_naive = datetime.now(tz_mexico).replace(tzinfo=None)
+                hora_dt = datetime.fromisoformat(hora_aviso)
+                segundos = (hora_dt - ahora_naive).total_seconds()
+                if 0 < segundos <= 86400:
+                    def enviar_push_rec():
+                        try:
+                            conn2 = get_conn()
+                            toks = conn2.run("SELECT token FROM push_tokens")
+                            conn2.close()
+                            for tok in toks:
+                                enviar_push(tok[0], "⏰ Recordatorio", mensaje)
+                        except Exception as ex:
+                            print(f"Error push timer rec: {ex}")
+                    t = threading.Timer(segundos, enviar_push_rec)
+                    t.daemon = True
+                    t.start()
+                    print(f"Push programado en {segundos:.0f}s: {mensaje}")
+            except Exception as ex:
+                print(f"Error timer: {ex}")
+
         return jsonify(parsed)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
