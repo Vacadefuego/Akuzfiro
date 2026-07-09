@@ -1406,6 +1406,29 @@ def agregar_recordatorio():
             h=hora_aviso, m=mensaje
         )
         conn.close()
+
+        # Programar push directo con Timer
+        try:
+            tz_mexico = pytz.timezone("America/Mexico_City")
+            ahora = datetime.now(tz_mexico).replace(tzinfo=None)
+            hora_dt = datetime.fromisoformat(hora_aviso)
+            segundos = (hora_dt - ahora).total_seconds()
+            if 0 < segundos <= 86400:  # máximo 24 horas
+                def enviar_push_recordatorio():
+                    try:
+                        conn2 = get_conn()
+                        tokens = conn2.run("SELECT token FROM push_tokens")
+                        conn2.close()
+                        for tok in tokens:
+                            enviar_push(tok[0], "⏰ Recordatorio", mensaje)
+                    except Exception as ex:
+                        print(f"Error push timer: {ex}")
+                t = threading.Timer(segundos, enviar_push_recordatorio)
+                t.daemon = True
+                t.start()
+        except Exception as ex:
+            print(f"Error programando timer: {ex}")
+
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
