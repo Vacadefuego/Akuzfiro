@@ -903,6 +903,72 @@ def chat():
         except Exception:
             pass
 
+        # --- AUTO-PROCESAR [RECORDATORIO] en el backend (no depende del frontend) ---
+        m_rec = re.search(r'\[RECORDATORIO\]([\s\S]*?)\[\/RECORDATORIO\]', respuesta)
+        if m_rec:
+            try:
+                rec_data = json.loads(m_rec.group(1))
+                frase_rec = rec_data.get("frase", "")
+                if frase_rec:
+                    tz_mexico = pytz.timezone("America/Mexico_City")
+                    ahora_rec = datetime.now(tz_mexico)
+                    prompt_rec = f"""Extrae la hora y el mensaje de este recordatorio. La fecha/hora actual es: {ahora_rec.strftime('%Y-%m-%d %H:%M')} (Xalapa, México, hora del centro).
+
+Frase: "{frase_rec}"
+
+Responde SOLO con JSON válido en este formato exacto, sin explicaciones:
+{{"hora_aviso": "YYYY-MM-DD HH:MM:SS", "mensaje": "texto del recordatorio"}}
+
+Reglas:
+- Si dice "en X minutos", suma esos minutos al tiempo actual
+- Si dice "a las 3pm" o "a las 15:00", usa esa hora de HOY (si ya pasó, usa mañana)
+- Si dice "mañana a las...", usa la fecha de mañana
+- Si no especifica AM/PM y la hora es < 8, asume PM
+- El mensaje debe ser corto y claro, sin la parte de "avísame" o "recuérdame"
+- Solo JSON, nada más"""
+                    res_parse = client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",
+                        messages=[{"role": "user", "content": prompt_rec}],
+                        temperature=0.0,
+                        max_tokens=100
+                    )
+                    resultado_rec = res_parse.choices[0].message.content.strip()
+                    resultado_rec = resultado_rec.replace("```json", "").replace("```", "").strip()
+                    parsed_rec = json.loads(resultado_rec)
+                    hora_aviso_rec = parsed_rec.get("hora_aviso")
+                    mensaje_rec = parsed_rec.get("mensaje", frase_rec)
+                    if hora_aviso_rec and mensaje_rec:
+                        conn_rec = get_conn()
+                        conn_rec.run(
+                            "INSERT INTO recordatorios (hora_aviso, mensaje) VALUES (:h, :m)",
+                            h=hora_aviso_rec, m=mensaje_rec
+                        )
+                        conn_rec.close()
+                        # Programar push con Timer
+                        try:
+                            ahora_naive = datetime.now(tz_mexico).replace(tzinfo=None)
+                            hora_dt = datetime.fromisoformat(hora_aviso_rec)
+                            segundos = (hora_dt - ahora_naive).total_seconds()
+                            if 0 < segundos <= 86400:
+                                def hacer_push_rec(msg=mensaje_rec):
+                                    try:
+                                        conn_p = get_conn()
+                                        toks = conn_p.run("SELECT token FROM push_tokens")
+                                        conn_p.close()
+                                        for tok in toks:
+                                            enviar_push(tok[0], "⏰ Recordatorio", msg)
+                                    except Exception as ex_p:
+                                        print(f"Error push timer rec: {ex_p}")
+                                t_rec = threading.Timer(segundos, hacer_push_rec)
+                                t_rec.daemon = True
+                                t_rec.start()
+                                print(f"[RECORDATORIO] guardado y push en {segundos:.0f}s: {mensaje_rec}")
+                        except Exception as ex_t:
+                            print(f"Error timer recordatorio: {ex_t}")
+            except Exception as ex_rec:
+                print(f"Error auto-procesando recordatorio: {ex_rec}")
+        # --- FIN AUTO-PROCESAR RECORDATORIO ---
+
         audio_b64_resp = None
         if con_voz and ELEVENLABS_API_KEY:
             audio_bytes = texto_a_voz(respuesta)
