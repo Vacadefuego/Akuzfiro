@@ -247,6 +247,13 @@ def init_db():
         )
     """)
     conn.run("""
+        CREATE TABLE IF NOT EXISTS push_tokens (
+            id SERIAL PRIMARY KEY,
+            token TEXT UNIQUE NOT NULL,
+            actualizado TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    conn.run("""
         CREATE TABLE IF NOT EXISTS gastos (
             id SERIAL PRIMARY KEY,
             fecha TIMESTAMP DEFAULT NOW(),
@@ -571,6 +578,75 @@ def texto_a_voz(texto):
         print(f"Error TTS: {e}")
         return None
 
+
+# --- PUSH NOTIFICATIONS ---
+@app.route("/push-token", methods=["POST"])
+def guardar_push_token():
+    try:
+        token = request.json.get("token", "").strip()
+        if not token:
+            return jsonify({"error": "Token vacío"}), 400
+        conn = get_conn()
+        conn.run("""
+            INSERT INTO push_tokens (token, actualizado) VALUES (:t, NOW())
+            ON CONFLICT (token) DO UPDATE SET actualizado = NOW()
+        """, t=token)
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def enviar_push(token, titulo, cuerpo):
+    """Manda una notificación push via Expo Push API."""
+    try:
+        payload = {
+            "to": token,
+            "title": titulo,
+            "body": cuerpo,
+            "sound": "default",
+            "priority": "high",
+        }
+        with httpx.Client(timeout=10) as http:
+            r = http.post("https://exp.host/--/api/v2/push/send", json=payload)
+            return r.status_code == 200
+    except Exception as e:
+        print(f"Error push: {e}")
+        return False
+
+
+def job_recordatorios():
+    """Revisa recordatorios pendientes cada minuto y manda push."""
+    from datetime import timedelta
+    while True:
+        try:
+            import time
+            time.sleep(60)
+            tz_mexico = pytz.timezone("America/Mexico_City")
+            ahora = datetime.now(tz_mexico).replace(tzinfo=None)
+            hace2min = ahora - timedelta(minutes=2)
+            conn = get_conn()
+            # Recordatorios que deben sonar ahora
+            recs = conn.run("""
+                SELECT id, mensaje FROM recordatorios
+                WHERE completado = FALSE
+                AND hora_aviso <= :ahora AND hora_aviso >= :hace2min
+            """, ahora=ahora, hace2min=hace2min)
+            if recs:
+                tokens = conn.run("SELECT token FROM push_tokens")
+                for rec in recs:
+                    for tok in tokens:
+                        enviar_push(tok[0], "⏰ Recordatorio", rec[1])
+                    conn.run("UPDATE recordatorios SET completado = TRUE WHERE id = :id", id=rec[0])
+            conn.close()
+        except Exception as e:
+            print(f"Error job recordatorios: {e}")
+
+
+# Iniciar job en hilo separado al arrancar
+import threading
+_job_thread = threading.Thread(target=job_recordatorios, daemon=True)
+_job_thread.start()
 
 # --- RUTAS ---
 @app.route("/chat", methods=["POST"])
