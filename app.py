@@ -1418,23 +1418,84 @@ def descargar_archivo(token):
         return jsonify({"error": "Token inválido o expirado"}), 404
     item = _download_cache.pop(token)
     tipo = item["tipo"]
-    payload = item["payload"]
-    # Redirigir al generador correspondiente
-    from flask import make_response
-    if tipo == "word":
-        with app.test_request_context(json=payload):
-            resp = generar_word()
-            return resp
-    elif tipo == "excel":
-        with app.test_request_context(json=payload):
-            return generar_excel()
-    elif tipo == "pdf":
-        with app.test_request_context(json=payload):
-            return generar_pdf()
-    elif tipo == "pptx":
-        with app.test_request_context(json=payload):
-            return generar_pptx()
-    return jsonify({"error": "Tipo no soportado"}), 400
+    data = item["payload"]
+
+    try:
+        if tipo == "word":
+            titulo = data.get("titulo", "Documento")
+            contenido = data.get("contenido", "")
+            secciones = data.get("secciones", [])
+            doc = Document()
+            estilo_normal = doc.styles["Normal"]
+            estilo_normal.font.name = "Calibri"
+            estilo_normal.font.size = Pt(11)
+            titulo_par = doc.add_heading(titulo, level=0)
+            titulo_par.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            for run in titulo_par.runs:
+                run.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
+                run.font.size = Pt(18)
+            doc.add_paragraph()
+            if contenido:
+                for linea in contenido.split("\n"):
+                    if linea.strip():
+                        doc.add_paragraph(linea.strip())
+            for seccion in secciones:
+                if isinstance(seccion, dict):
+                    doc.add_paragraph()
+                    h = doc.add_heading(seccion.get("titulo", ""), level=1)
+                    texto_sec = seccion.get("contenido", "")
+                    for linea in texto_sec.split("\n"):
+                        if linea.strip():
+                            doc.add_paragraph(linea.strip())
+                elif isinstance(seccion, str):
+                    doc.add_paragraph()
+                    doc.add_heading(seccion, level=1)
+            buf = io.BytesIO()
+            doc.save(buf)
+            buf.seek(0)
+            nombre = f"{titulo.replace(' ', '_')}.docx"
+            return send_file(buf,
+                mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                as_attachment=True, download_name=nombre)
+
+        elif tipo == "pdf":
+            titulo = data.get("titulo", "Documento")
+            contenido = data.get("contenido", "")
+            buf = io.BytesIO()
+            doc_pdf = SimpleDocTemplate(buf, pagesize=A4)
+            styles = getSampleStyleSheet()
+            story = [Paragraph(titulo, styles['Title']), Spacer(1, 0.3*inch)]
+            for linea in contenido.split("\n"):
+                if linea.strip():
+                    story.append(Paragraph(linea.strip(), styles['Normal']))
+                    story.append(Spacer(1, 0.1*inch))
+            doc_pdf.build(story)
+            buf.seek(0)
+            nombre = f"{titulo.replace(' ', '_')}.pdf"
+            return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=nombre)
+
+        elif tipo == "excel":
+            titulo = data.get("titulo", "Documento")
+            encabezados = data.get("encabezados", [])
+            filas = data.get("filas", [])
+            wb = Workbook()
+            ws = wb.active
+            ws.title = titulo[:31]
+            if encabezados:
+                ws.append(encabezados)
+            for fila in filas:
+                ws.append(fila)
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            nombre = f"{titulo.replace(' ', '_')}.xlsx"
+            return send_file(buf,
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                as_attachment=True, download_name=nombre)
+
+        return jsonify({"error": "Tipo no soportado"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/generar-word", methods=["POST"])
