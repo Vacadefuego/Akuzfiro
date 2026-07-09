@@ -759,12 +759,26 @@ def chat():
 
                 # Filtrar solo los que parecen nombres de lugares (capitalizados, no frases genéricas)
                 ignorar = {"xalapa", "veracruz", "méxico", "mexico", "la ciudad", "este lugar",
-                           "estos lugares", "un lugar", "el lugar", "la zona", "el área"}
+                           "estos lugares", "un lugar", "el lugar", "la zona", "el área",
+                           # Títulos de documentos y meses — no son lugares
+                           "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+                           "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+                           "calendario", "documento", "reporte", "bitácora", "bitacora",
+                           "eventos", "actividades", "agenda", "semana", "mes"}
+                # También ignorar si contiene palabras de documento
+                palabras_doc = ["calendario", "documento", "reporte", "archivo", "word",
+                                "excel", "pdf", "lista", "resumen", "informe", "acta",
+                                "julio", "agosto", "enero", "febrero", "marzo", "abril",
+                                "mayo", "junio", "septiembre", "octubre", "noviembre", "diciembre",
+                                "gustavo", "eventos", "adicionales", "importantes"]
                 lugares_encontrados = []
                 vistos = set()
                 for nombre in nombres_entre_comillas:
                     nombre = nombre.strip()
                     if nombre.lower() in ignorar or len(nombre) < 3:
+                        continue
+                    # Ignorar si contiene palabras de documento/calendario
+                    if any(p in nombre.lower() for p in palabras_doc):
                         continue
                     # Debe tener al menos una palabra capitalizada
                     if any(w[0].isupper() for w in nombre.split() if w):
