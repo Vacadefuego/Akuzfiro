@@ -1336,7 +1336,7 @@ def recordatorios_pendientes():
     try:
         from datetime import timedelta
         tz_mexico = pytz.timezone("America/Mexico_City")
-        ahora = datetime.now(tz_mexico)
+        ahora = datetime.now(tz_mexico).replace(tzinfo=None)  # sin tz para comparar con BD
         hace5min = ahora - timedelta(minutes=5)
         conn = get_conn()
         rows = conn.run("""
