@@ -616,6 +616,18 @@ def test_push():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/push-tokens-limpiar", methods=["POST"])
+def limpiar_tokens_invalidos():
+    """Elimina tokens que no tengan formato válido de Expo."""
+    try:
+        conn = get_conn()
+        conn.run("DELETE FROM push_tokens WHERE token NOT LIKE 'ExponentPushToken[%'")
+        tokens = conn.run("SELECT token, actualizado FROM push_tokens")
+        conn.close()
+        return jsonify({"ok": True, "tokens_validos": len(tokens)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/push-token", methods=["POST"])
 def guardar_push_token():
     try:
